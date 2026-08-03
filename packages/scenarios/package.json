@@ -1,0 +1,34 @@
+{
+  "name": "@forgedesign/scenarios",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fabioalencar/forgedesign.git",
+    "directory": "packages/scenarios"
+  },
+  "description": "The browser runtime for Forge scenarios (DDR-063): reads ?scenario= and answers can()/flag()/data plus route rules. Zero dependencies.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  },
+  "private": true
+}

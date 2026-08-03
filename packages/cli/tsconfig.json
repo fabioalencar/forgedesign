@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true,
+    // tsup's dts step injects baseUrl, which TS6 flags as deprecated (TS5101)
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src", "test", "tsup.config.ts"]
+}

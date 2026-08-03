@@ -1,0 +1,80 @@
+# Forge
+
+**Forge is the design record for AI-built prototypes.** It is not the build tool — the
+building happens in your own coding agent. Forge owns what that work leaves behind: the
+decisions, the tasks, the stakeholder feedback, and the frozen versions people were
+actually shown.
+
+This repository is the open half, Apache-2.0. It is also **its own first user**: the
+`design/` directory here is a Design Record in the format these packages implement, and CI
+runs `forge doctor` against it on every push.
+
+## What's in here
+
+| | |
+| --- | --- |
+| [`packages/format`](packages/format) | `@forgedesign/format` — the parser and serialiser for the record. Every consumer reads a record through this, so there is one grammar rather than one per tool. |
+| [`packages/cli`](packages/cli) | `@forgedesign/cli` — the `forge` binary. |
+| [`packages/scenarios`](packages/scenarios) | `@forgedesign/scenarios` — the browser runtime a prototype imports so a reviewer can be shown the app as a particular role, with particular data, from a URL. Zero dependencies. |
+| [`skills/`](skills) | The agent skills. |
+| [`spec/format.md`](spec/format.md) | The format itself. |
+
+## Running it
+
+The packages are not on npm yet, so run the CLI from a clone:
+
+```sh
+pnpm install
+pnpm -r build
+node packages/cli/dist/index.js --help
+```
+
+Point it at a project — including one that already has code:
+
+```sh
+node packages/cli/dist/index.js init ../my-prototype
+```
+
+That writes a `design/` bundle and a `forge.json`. `forge doctor` then checks the record
+against the format's rules: unique ids, references that resolve, valid statuses, and
+accepted decisions that have not been quietly edited.
+
+## The idea
+
+A record is **markdown with frontmatter, in git**. Not a database, not a hosted document —
+files your agent can read and write, and `git diff` can show you.
+
+```
+design/
+  index.md          the bundle index (generated)
+  brief.md          what this is and who it's for
+  todos.md          the task ledger
+  decisions/        one file per decision, immutable once accepted
+  feedback/         one file per piece of stakeholder feedback
+  questions/        open questions, deliberately unanswered
+```
+
+The pattern throughout is **skills talk, the CLI writes**. Judgment happens in your agent
+session; a `forge` command is what actually touches the record. That is why ids and statuses
+stay consistent without anyone remembering to make them so.
+
+## What is not here
+
+Publishing a frozen version to a URL a stakeholder can open, the PIN gate in front of it,
+and the comment service behind it are a separate commercial service.
+
+The line is drawn at **serving, not capability**. Everything that produces a record is here
+and is Apache-2.0. A freeze is a portable directory of static files — you can host one
+yourself and never involve the service at all. What you would be reimplementing is a server,
+not a format.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) first — this repository has rules that CI enforces,
+and a change that ignores them fails before a human reads it. The short version: open an
+issue before writing code, every change belongs to a task, and non-obvious choices get a
+decision record.
+
+## Licence
+
+Apache-2.0. See [LICENSE](LICENSE).

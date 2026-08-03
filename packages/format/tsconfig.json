@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true,
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src", "test", "tsup.config.ts"]
+}

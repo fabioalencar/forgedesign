@@ -1,0 +1,113 @@
+{
+  "name": "@forgedesign/cli",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fabioalencar/forgedesign.git",
+    "directory": "packages/cli"
+  },
+  "description": "Forge CLI \u2014 versioning ceremony and stakeholder feedback loop for the design record",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "forge": "dist/index.js"
+  },
+  "exports": {
+    "./git": {
+      "types": "./dist/git.d.ts",
+      "import": "./dist/git.js"
+    },
+    "./todo": {
+      "types": "./dist/todo.d.ts",
+      "import": "./dist/todo.js"
+    },
+    "./task-ledger": {
+      "types": "./dist/task-ledger.d.ts",
+      "import": "./dist/task-ledger.js"
+    },
+    "./registry": {
+      "types": "./dist/registry.d.ts",
+      "import": "./dist/registry.js"
+    },
+    "./freezes": {
+      "types": "./dist/freezes.d.ts",
+      "import": "./dist/freezes.js"
+    },
+    "./comments-client": {
+      "types": "./dist/comments-client.d.ts",
+      "import": "./dist/comments-client.js"
+    },
+    "./preview": {
+      "types": "./dist/preview.d.ts",
+      "import": "./dist/preview.js"
+    },
+    "./intake": {
+      "types": "./dist/intake.d.ts",
+      "import": "./dist/intake.js"
+    },
+    "./scenarios": {
+      "types": "./dist/scenarios.d.ts",
+      "import": "./dist/scenarios.js"
+    },
+    "./datasets": {
+      "types": "./dist/datasets.d.ts",
+      "import": "./dist/datasets.js"
+    },
+    "./artifact-types": {
+      "types": "./dist/artifact-types.d.ts",
+      "import": "./dist/artifact-types.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./doctor": {
+      "types": "./dist/doctor.d.ts",
+      "import": "./dist/doctor.js"
+    },
+    "./commands/comments": {
+      "types": "./dist/commands/comments.d.ts",
+      "import": "./dist/commands/comments.js"
+    },
+    "./commands/init": {
+      "types": "./dist/commands/init.d.ts",
+      "import": "./dist/commands/init.js"
+    },
+    "./commands/explore": {
+      "types": "./dist/commands/explore.d.ts",
+      "import": "./dist/commands/explore.js"
+    },
+    "./commands/freeze": {
+      "types": "./dist/commands/freeze.d.ts",
+      "import": "./dist/commands/freeze.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/embed-skills.mjs && tsup",
+    "dev": "tsup --watch",
+    "test": "pnpm build && vitest run",
+    "typecheck": "node scripts/embed-skills.mjs && tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@forgedesign/format": "workspace:*",
+    "commander": "^15.0.0",
+    "docx": "^9.7.1",
+    "pdfkit": "^0.19.1",
+    "@forgedesign/scenarios": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "@types/pdfkit": "^0.17.6",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

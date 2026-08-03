@@ -1,0 +1,41 @@
+{
+  "name": "@forgedesign/format",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fabioalencar/forgedesign.git",
+    "directory": "packages/format"
+  },
+  "description": "The Design Record format (spec/format.md) \u2014 schemas, parsers, serializers, ID allocation, and link-graph resolution. One runtime dependency (yaml, per DDR-061).",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  }
+}

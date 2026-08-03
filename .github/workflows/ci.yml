@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # doctor --base compares against the merge target or the previous
+          # commit, and neither exists in a depth-1 clone.
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The CLI's dist/ is gitignored and its own tests run against the build
+      # output, so the libraries are built before anything typechecks.
+      - name: Build
+        run: pnpm -r build
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      # One invocation, not `pnpm -r lint`: there is a single biome.json at the
+      # root, so `biome check .` covers every package's own lint script and the
+      # root-level files besides.
+      - name: Lint and format (biome)
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm -r test
+
+      - name: Knip (unused files, exports, dependencies)
+        run: pnpm knip
+
+      # This repository is its own Design Record, so the format's rules apply to
+      # it. `--base` compares accepted decisions against the merge target, which
+      # is what makes their immutability enforceable in a pull request rather
+      # than only after a merge.
+      - name: forge doctor
+        run: node packages/cli/dist/index.js doctor . --base "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD^' }}"
