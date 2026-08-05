@@ -125,7 +125,7 @@ Use when asked to freeze, cut a release, or tag a version.
    pending record changes first.
 5. Run `forge freeze <tag> --message "<the message from step 2>"`. Freeze produces the
    artifact; it does not host it. To put it in front of a stakeholder, follow with
-   `forge publish <tag>` (DDR-073).
+   `forge publish <tag>`.
 6. Report back the preview/Storybook URLs, stakeholder PIN, and handoff pack location
    verbatim from the command's output.
 

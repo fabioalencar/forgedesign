@@ -1,6 +1,6 @@
 ---
 name: intake
-description: Classify a staged transcript, meeting note, or other raw context into candidate tasks/decisions/artifacts for the design record (DDR-021). Use when the user asks to "intake" a transcript, meeting note, or other context source, or points you at a file staged under .forge/intake/.
+description: Classify a staged transcript, meeting note, or other raw context into candidate tasks/decisions/artifacts for the design record. Use when the user asks to "intake" a transcript, meeting note, or other context source, or points you at a file staged under .forge/intake/.
 ---
 
 # intake

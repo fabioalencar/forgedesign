@@ -5,7 +5,7 @@ description: Gather release notes conversationally and run forge freeze to tag, 
 
 # freeze
 
-Freezes are immutable version snapshots (spec/format.md; DDR-032): an annotated Git tag,
+Freezes are immutable version snapshots (spec/format.md): an annotated Git tag,
 a prototype + Storybook build, immutable preview URLs, a stakeholder PIN, a handoff pack,
 and a `freezes.json` entry. `forge freeze` does all of that — this skill's job is making
 sure the tag actually tells the story of what changed, not just stamping a version number.
@@ -37,7 +37,7 @@ sure the tag actually tells the story of what changed, not just stamping a versi
    ```bash
    forge freeze <tag> --message "<the summary from step 2>"
    ```
-   Freeze produces the artifact; it does not host it (DDR-073). If the user wants a
+   Freeze produces the artifact; it does not host it. If the user wants a
    stakeholder to see it, follow with `forge publish <tag>`, which prints the review URL.
 
 6. **Report back** exactly what the command printed: the review URL if you published, the
@@ -51,7 +51,7 @@ sure the tag actually tells the story of what changed, not just stamping a versi
      If the record has no scenarios, review is unguided; if that matters
      for this release, say so rather than letting the user find out from a stakeholder.
    - **Old share links update themselves.** Comments whose feedback shipped in this release
-     now read "addressed in `<tag>`" on the preview the stakeholder already has (DDR-064).
+     now read "addressed in `<tag>`" on the preview the stakeholder already has.
      If the command reported any, tell the user — it is often worth a note to the person
      who raised them.
 

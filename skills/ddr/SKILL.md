@@ -78,10 +78,10 @@ the user rather than skipping it or writing one reflexively.
      `superseded_by` link. Only that changes; never rewrite its body.
    - **Part of it changed, the rest still stands** — the far more common case. The older DDR
      keeps `decision_status: accepted` and gains `amended_by: [DDR-###]`, which is the one
-     edit the immutability rule permits (DDR-087). Put `"amends": ["DDR-###"]` in the staged
-     JSON so the new decision declares it too: `forge doctor` checks that both halves agree
-     (DDR-090), and it reads that key rather than your prose, so writing "this amends DDR-088"
-     in the body alone records nothing.
+     edit the immutability rule permits. Put `"amends": ["DDR-###"]` in the staged
+     JSON so the new decision declares it too: `forge doctor` checks that both halves agree,
+     and it reads that key rather than your prose, so writing "this amends DDR-###" in the
+     body alone records nothing.
 
    Reach for `superseded` only when nothing in the older decision still holds. Marking an
    amendment as superseded asserts something false about the parts still in force.

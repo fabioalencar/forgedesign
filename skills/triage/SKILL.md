@@ -73,7 +73,7 @@ the same feedback entries, so it doesn't matter which one a comment goes through
 
 ## What the stakeholder sees afterwards
 
-Each disposition is projected back onto the comment that caused it (DDR-064), so the share
+Each disposition is projected back onto the comment that caused it, so the share
 link a stakeholder already has says where their point landed: declined ones carry the DDR,
 and accepted ones read "addressed in `<tag>`" once the linked task is done and that release
 is frozen. `forge freeze` runs the projection itself; `forge comments resolve <tag>` does

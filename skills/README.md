@@ -20,7 +20,7 @@ agree.
 
 ## How these reach a user
 
-They ship *inside* the published CLI (DDR-079) rather than through a separate marketplace,
+They ship *inside* the published CLI rather than through a separate marketplace,
 so a skill and the `forge` commands it calls can never be different versions. A user runs:
 
 ```sh
