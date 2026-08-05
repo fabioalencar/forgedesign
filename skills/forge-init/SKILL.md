@@ -105,6 +105,6 @@ file is "created the first time content exists for it — by a skill, the CLI, o
 and neither file has an entry grammar for a CLI to enforce.
 
 The task ledger and the question concepts *do* carry ids, so those go through `forge task
-add` and `forge question` (T-282) — the id is allocated from what is already on disk, and a
+add` and `forge question` — the id is allocated from what is already on disk, and a
 duplicate is not a mistake you can make. Step 9 still matters, but it is now checking your
 judgment rather than your bookkeeping.

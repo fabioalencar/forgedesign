@@ -44,8 +44,9 @@ the user for it.
 7. Capture already-in-force decisions through the ddr flow above. Three real ones beat a
    dozen invented.
 
-Do not create the on-demand concepts (`design/feedback/`, `design/stakeholders/`, `design/roles/`,
-`DataModel.md`, `ProcessFlows.md`, `Calendar.md`, `Design.md`, `Components.md`) — they
+Do not create the on-demand concepts (`design/feedback/`, `design/stakeholders/`,
+`design/roles/`, `design/flows/`, `design/scenarios/`, `design/data-model.md`,
+`design/calendar.md`, `design/design-system.md`, `design/components.md`) — they
 appear when there is something true to put in them. Do not leave scaffold placeholder prose
 in place, and do not invent a fact to fill a section; an unknown is a `QUESTION-###`.
 
@@ -128,5 +129,5 @@ Use when asked to freeze, cut a release, or tag a version.
 6. Report back the preview/Storybook URLs, stakeholder PIN, and handoff pack location
    verbatim from the command's output.
 
-`FeatureLog.md` generation isn't wired into `forge freeze` yet — don't tell the user one
-was generated (see `todo/todo.md`'s T-238).
+`forge freeze` writes `design/feature-log.md` — what reached Done between the previous tag
+and this one, read from Git rather than from a field. Report it like the other outputs.
