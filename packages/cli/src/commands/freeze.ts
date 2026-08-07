@@ -27,6 +27,7 @@ import {
 import { generateHandoffPack } from "../handoff.js";
 import { generateReleaseHub } from "../hub.js";
 import { ensureProjectId, revertProjectId } from "../project.js";
+import { readRecordVersion, versionRefusal } from "../record-version.js";
 import { resolveTrail } from "../resolution-trail.js";
 import { emitScenarioBundle } from "../scenario-emit.js";
 
@@ -51,6 +52,23 @@ export function generatePin(): string {
 
 /** Hard preconditions checked before the tag is created (spec §2). Throws. */
 async function assertFreezable(root: string, options: FreezeOptions): Promise<void> {
+  // DDR-095 applies here too, and this site was missed when it landed: a freeze
+  // writes to the record — the feature log, the resolution trail's stamps — so
+  // it is a writer, and a writer on a pre-0.2 record gets the one sentence that
+  // names the way out. Before the tag, not after: `createAnnotatedTag` is the
+  // first irreversible thing this command does, and a tag left behind by a
+  // half-run freeze is what the immutability check above then refuses.
+  //
+  // Only a record that is *behind*. A repo with no `forge.json` at all is not a
+  // stale record, it is one that has none — and freeze mints the manifest there
+  // on purpose, to carry the projectId the comment API needs. Refusing that too
+  // would have removed a working bootstrap as a side effect of a rule about old
+  // formats, which is a different change than the one this decision asked for.
+  const version = await readRecordVersion(root);
+  if (version.kind === "migratable" || version.kind === "unknown") {
+    throw new Error(versionRefusal(version));
+  }
+
   if (!options.message?.trim()) {
     throw new Error("freeze requires --message (annotated tags carry the version story)");
   }

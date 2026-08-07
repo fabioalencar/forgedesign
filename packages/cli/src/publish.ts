@@ -79,6 +79,8 @@ export interface PublishResult {
 export interface PublishRefusal {
   error: string;
   refusal?: { limit: string; used: number; allowed: number };
+  /** files the service thinks carry a secret (TASK-366); present only on that refusal */
+  secrets?: Array<{ path: string; what: string }>;
 }
 
 export async function publishBuild(input: {
@@ -87,6 +89,8 @@ export async function publishBuild(input: {
   repoName: string;
   tag: string;
   snapshotId?: string | null;
+  /** publish even when the service thinks the build carries a secret (TASK-366) */
+  force?: boolean;
 }): Promise<{ ok: true; result: PublishResult } | { ok: false; refusal: PublishRefusal }> {
   const config = await readUserConfig();
   if (!config.cloudToken) {
@@ -109,6 +113,7 @@ export async function publishBuild(input: {
       repoName: input.repoName,
       tag: input.tag,
       snapshotId: input.snapshotId ?? undefined,
+      force: input.force === true ? true : undefined,
       files,
     }),
   });

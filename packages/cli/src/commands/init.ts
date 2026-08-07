@@ -107,7 +107,7 @@ export function registerInitCommand(program: Command): void {
     .command("init")
     .argument("[name]", "directory to create (defaults to the current directory)")
     .description(
-      "create the Design Record's core files (Brief.md, Todos.md, Glossary.md, OpenQuestions.md, decisions/, forge.json) and register the project; existing files are never overwritten",
+      "create the Design Record's core files (design/index.md, brief.md, todos.md, decisions/, forge.json) and register the project; existing files are never overwritten",
     )
     .action(async (name: string | undefined) => {
       const result = await initProject(name ?? process.cwd());

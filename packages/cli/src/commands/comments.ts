@@ -436,7 +436,7 @@ export async function applyTriage(options: {
     );
   } catch (error) {
     log(
-      `warning: Feedbacks.md/Todos.md updated but comments not marked fetched (${error instanceof Error ? error.message : String(error)}); a re-pull of ${options.tag} may duplicate these ${comments.length} item(s).`,
+      `warning: the record was updated but comments not marked fetched (${error instanceof Error ? error.message : String(error)}); a re-pull of ${options.tag} may duplicate these ${comments.length} item(s).`,
     );
   }
 
@@ -505,7 +505,9 @@ export function registerCommentsCommand(program: Command): void {
 
   const triage = comments
     .command("triage")
-    .description("stage and apply comment triage into Feedbacks.md/Todos.md (spec/format.md)");
+    .description(
+      "stage and apply comment triage into the record's feedback/ and todos.md (spec/format.md)",
+    );
 
   triage
     .argument("<tag>", "freeze tag whose comments to triage")
@@ -528,7 +530,7 @@ export function registerCommentsCommand(program: Command): void {
     .command("apply")
     .argument("<tag>", "freeze tag whose staged comments to apply")
     .description(
-      "write each staged comment's disposition (.forge/triage/<tag>/proposal.json) into Feedbacks.md/Todos.md, then mark them fetched",
+      "write each staged comment's disposition (.forge/triage/<tag>/proposal.json) into feedback/ and todos.md, then mark them fetched",
     )
     .action(async (tag: string) => {
       const result = await applyTriage({ tag, log: console.log });

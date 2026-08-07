@@ -11,7 +11,8 @@ export function registerPublishCommand(program: Command): void {
     .command("publish")
     .argument("<tag>", "the freeze tag to publish")
     .description("host a frozen build on Forge Cloud and get a link for a stakeholder")
-    .action(async (tag: string) => {
+    .option("--force", "publish even if the build looks like it carries a secret (TASK-366)", false)
+    .action(async (tag: string, options: { force: boolean }) => {
       const root = (await repoRoot(process.cwd())) ?? process.cwd();
 
       const freezes = await readFreezes(root).catch(() => []);
@@ -49,6 +50,7 @@ export function registerPublishCommand(program: Command): void {
         repoName: path.basename(root),
         tag,
         snapshotId: freeze.snapshotId,
+        force: options.force,
       });
 
       if (!outcome.ok) {
