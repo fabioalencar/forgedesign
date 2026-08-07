@@ -63,7 +63,21 @@ export function parseFrontmatter(text: string): FrontmatterParse {
   const error = doc.errors[0];
   if (error) return { kind: "invalid", message: error.message, body: split.body };
 
-  const value: unknown = doc.toJS() ?? {};
+  // `parseDocument` collects *syntax* errors in `doc.errors`, but resource
+  // guards like `maxAliasCount` (a YAML alias bomb) throw at resolution time,
+  // inside `toJS()`. Catch them here: parsing is contracted never to throw, so
+  // that a malformed concept is reported with its file path rather than
+  // crashing the whole scan with a bare message (TASK-408 finding 5).
+  let value: unknown;
+  try {
+    value = doc.toJS() ?? {};
+  } catch (resolveError) {
+    return {
+      kind: "invalid",
+      message: resolveError instanceof Error ? resolveError.message : "frontmatter is unresolvable",
+      body: split.body,
+    };
+  }
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return {
       kind: "invalid",

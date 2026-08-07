@@ -61,6 +61,26 @@ describe("parseFrontmatter", () => {
     expect(parseFrontmatter("---\n---\nbody\n")).toMatchObject({ kind: "ok", data: {} });
   });
 
+  it("reports an alias bomb as invalid rather than throwing (TASK-408 finding 5)", () => {
+    // maxAliasCount fires at resolution (toJS), not parse — it must come back as
+    // an invalid concept the caller can name, not an uncaught throw mid-scan.
+    const anchors = ["a: &a [x,x,x,x,x,x,x,x,x]"];
+    for (const [cur, prev] of [
+      ["b", "a"],
+      ["c", "b"],
+      ["d", "c"],
+      ["e", "d"],
+    ]) {
+      anchors.push(`${cur}: &${cur} [*${prev},*${prev},*${prev},*${prev},*${prev}]`);
+    }
+    const bomb = `---\ntype: Decision\n${anchors.join("\n")}\n---\nbody\n`;
+    let parsed: ReturnType<typeof parseFrontmatter>;
+    expect(() => {
+      parsed = parseFrontmatter(bomb);
+    }).not.toThrow();
+    expect(parsed!.kind).toBe("invalid");
+  });
+
   it("reads the YAML shapes the spec's frontmatter example uses", () => {
     const text = [
       "---",
