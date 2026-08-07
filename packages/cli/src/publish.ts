@@ -43,6 +43,54 @@ export interface PublishFile {
   contentType: string;
 }
 
+/**
+ * Paths that are almost never meant to be published, and dangerous when they
+ * are: a `.git` entry means `build.output` points at a repository rather than a
+ * build directory, so its whole history would go with it; `node_modules` means a
+ * source tree; a `.env` file is secrets. A published freeze is world-readable to
+ * anyone with the URL, so any of these leaking is the kind of mistake there is no
+ * taking back.
+ *
+ * The server-side secret scan (TASK-366) is the net against *evasion* — a hostile
+ * author who can read the Apache-2.0 source and route around a client check. This
+ * is the net against a *mistake*, and for a mistake the CLI is the better place:
+ * it fails before uploading the build rather than after, and it can name the file.
+ *
+ * A denylist of specific hazards, deliberately not "every dotfile": a published
+ * static site legitimately carries `.well-known/` and `.nojekyll`.
+ */
+export function screenPublishHazards(files: PublishFile[]): Array<{ path: string; why: string }> {
+  const hazards: Array<{ path: string; why: string }> = [];
+  for (const file of files) {
+    const segments = file.path.split("/");
+    const base = segments.at(-1) ?? "";
+    if (segments.includes(".git")) hazards.push({ path: file.path, why: "a git repository" });
+    else if (segments.includes("node_modules"))
+      hazards.push({ path: file.path, why: "a dependency tree" });
+    // `.env.example`/`.sample`/`.template` are placeholder conventions, not secrets.
+    else if (base === ".env" || /^\.env\.(?!example$|sample$|template$)/.test(base))
+      hazards.push({ path: file.path, why: "an environment file" });
+  }
+  return hazards;
+}
+
+/** The refusal a hazard screen produces — names a few paths and the way past. */
+export function hazardRefusal(hazards: Array<{ path: string; why: string }>): string {
+  const shown = hazards
+    .slice(0, 5)
+    .map((h) => `  ${h.path} — looks like part of ${h.why}`)
+    .join("\n");
+  const more = hazards.length > 5 ? `\n  …and ${hazards.length - 5} more` : "";
+  return [
+    `refusing to publish ${hazards.length} file(s) that look swept in by mistake:`,
+    ``,
+    `${shown}${more}`,
+    ``,
+    `A published freeze is readable by anyone with the URL. Point "build.output" at`,
+    `your build directory (e.g. dist/), or re-run with --force to publish anyway.`,
+  ].join("\n");
+}
+
 /** Every file in a build directory, as the publish payload, paths POSIX-style. */
 export async function collectBuild(buildDir: string): Promise<PublishFile[]> {
   const entries = await fs.readdir(buildDir, { recursive: true, withFileTypes: true });
@@ -100,6 +148,13 @@ export async function publishBuild(input: {
   const files = await collectBuild(input.buildDir);
   if (files.length === 0) {
     return { ok: false, refusal: { error: `nothing to publish — ${input.buildDir} is empty` } };
+  }
+
+  // Before the upload, not after: the whole value of a client-side check on a
+  // mistake is that it costs nothing and names the file (TASK-404 finding 4).
+  if (input.force !== true) {
+    const hazards = screenPublishHazards(files);
+    if (hazards.length > 0) return { ok: false, refusal: { error: hazardRefusal(hazards) } };
   }
 
   const res = await fetch(`${base}/api/cli/publish`, {

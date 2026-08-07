@@ -11,7 +11,11 @@ export function registerPublishCommand(program: Command): void {
     .command("publish")
     .argument("<tag>", "the freeze tag to publish")
     .description("host a frozen build on Forge Cloud and get a link for a stakeholder")
-    .option("--force", "publish even if the build looks like it carries a secret (TASK-366)", false)
+    .option(
+      "--force",
+      "publish even if the build looks unsafe — a secret, or files swept in by mistake (.git, node_modules, .env)",
+      false,
+    )
     .action(async (tag: string, options: { force: boolean }) => {
       const root = (await repoRoot(process.cwd())) ?? process.cwd();
 

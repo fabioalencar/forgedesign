@@ -141,3 +141,27 @@ describe("runFreeze", () => {
     expect(await readFreezes(root)).toEqual([]);
   });
 });
+
+describe("freeze on a record that is not current (TASK-395)", () => {
+  it("refuses before creating the tag", async () => {
+    // DDR-095 says a pre-0.2 record gets `upgrade` and nothing else, and freeze
+    // was missed when that landed — it writes the feature log and stamps the
+    // resolution trail, so it is a writer. Refusing *before* the tag matters:
+    // an annotated tag left behind by a half-run freeze is what the
+    // immutability check then refuses on the retry.
+    const root = path.join(sandbox, "legacy");
+    await fs.mkdir(root, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: root });
+    await fs.writeFile(path.join(root, "forge.json"), '{"formatVersion":"0.1"}\n', "utf8");
+    await fs.writeFile(path.join(root, "Todos.md"), "## Todo\n", "utf8");
+    execFileSync("git", ["add", "-A"], { cwd: root });
+    execFileSync("git", ["-c", "user.name=a", "-c", "user.email=a@b", "commit", "-qm", "seed"], {
+      cwd: root,
+    });
+
+    await expect(runFreeze({ tag: "v1", message: "x", cwd: root })).rejects.toThrow(
+      /forge upgrade --to 0\.2/,
+    );
+    expect(execFileSync("git", ["tag"], { cwd: root, encoding: "utf8" }).trim()).toBe("");
+  });
+});

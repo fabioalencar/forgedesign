@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { collectBuild, contentTypeFor } from "../src/publish.js";
+import { collectBuild, contentTypeFor, screenPublishHazards } from "../src/publish.js";
 
 let root: string;
 
@@ -77,5 +77,50 @@ describe("collectBuild", () => {
     const [file] = await collectBuild(root);
     expect(file?.path).toBe("deep/nested/page/index.html");
     expect(file?.path).not.toContain("\\");
+  });
+});
+
+describe("screenPublishHazards (TASK-404 finding 4)", () => {
+  const f = (path: string) => ({ path, content: "", contentType: "text/plain" });
+
+  it("flags a git repository, a dependency tree, and an env file", () => {
+    const hazards = screenPublishHazards([
+      f("index.html"),
+      f(".git/HEAD"),
+      f("node_modules/left-pad/index.js"),
+      f(".env"),
+      f("assets/app.js"),
+    ]);
+    expect(hazards.map((h) => h.path).sort()).toEqual([
+      ".env",
+      ".git/HEAD",
+      "node_modules/left-pad/index.js",
+    ]);
+  });
+
+  it("flags real env variants but not the placeholder conventions", () => {
+    const flagged = screenPublishHazards([
+      f(".env.local"),
+      f(".env.production"),
+      f(".env.example"),
+      f(".env.sample"),
+      f(".env.template"),
+    ]).map((h) => h.path);
+    expect(flagged).toEqual([".env.local", ".env.production"]);
+  });
+
+  it("leaves legitimate dotfiles a static site carries alone", () => {
+    expect(
+      screenPublishHazards([
+        f(".well-known/security.txt"),
+        f(".well-known/apple-app-site-association"),
+        f(".nojekyll"),
+        f("index.html"),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("says nothing about a clean build", () => {
+    expect(screenPublishHazards([f("index.html"), f("assets/app.css")])).toEqual([]);
   });
 });
