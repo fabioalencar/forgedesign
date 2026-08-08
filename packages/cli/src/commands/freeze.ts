@@ -35,7 +35,6 @@ export interface FreezeOptions {
   tag: string;
   message: string;
   cwd?: string;
-  /** Vercel team slug; overrides `vercelScope` in ~/.forge/config.json */
   log?: (line: string) => void;
 }
 
@@ -284,7 +283,7 @@ export function registerFreezeCommand(program: Command): void {
     .argument("<tag>", "immutable version name (alpha, beta, mvp, …)")
     .requiredOption("-m, --message <message>", "annotated tag message")
     .description(
-      "freeze the current version: annotated tag, prototype + Storybook builds, immutable Vercel previews, freezes.json entry committed on main",
+      "freeze the current version: annotated tag, prototype + Storybook builds, and a freezes.json entry committed on main; host it for review with `forge publish`",
     )
     .action(async (tag: string, opts: { message: string }) => {
       const result = await runFreeze({

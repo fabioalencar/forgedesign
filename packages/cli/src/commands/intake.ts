@@ -4,7 +4,7 @@ import type { Command } from "commander";
 import { applyIntake, stageIntake } from "../intake.js";
 
 export function registerIntakeCommand(program: Command): void {
-  const intake = program.command("intake").description("stage and apply context intake (DDR-021)");
+  const intake = program.command("intake").description("stage and apply context intake");
 
   intake
     .argument("<file>", "local transcript, summary, VTT, SRT, or plain-text source")

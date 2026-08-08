@@ -10,7 +10,7 @@ export { splitCommand } from "../preview.js";
 export function registerPreviewCommand(program: Command): void {
   const preview = program
     .command("preview")
-    .description("live dev-server preview of the current branch (DDR-020, DDR-053)");
+    .description("live dev-server preview of the current branch");
 
   preview
     .command("start")
