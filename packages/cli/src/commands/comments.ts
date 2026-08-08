@@ -19,30 +19,14 @@ import {
   type ApiComment,
   archiveSnapshot,
   type CommentsApiConfig,
-  downloadScreenshot,
   fetchUnfetchedComments,
   markCommentsFetched,
 } from "../comments-client.js";
 import { readUserConfig } from "../config.js";
 import { findFreeze, readFreezes, todayIsoDate } from "../freezes.js";
 import { requireRepoRoot } from "../git.js";
-import { readRecordVersion, requireCurrentRecord, versionRefusal } from "../record-version.js";
+import { requireCurrentRecord } from "../record-version.js";
 import { resolveTrail } from "../resolution-trail.js";
-import { addTask, nextTaskId, parseTodo, serializeTodo, type TaskField } from "../todo.js";
-
-export interface PullOptions {
-  tag: string;
-  cwd?: string;
-  log?: (line: string) => void;
-}
-
-export interface PullResult {
-  /** todo items created (one per thread root) */
-  created: number;
-  /** comments marked fetched server-side (roots + replies) */
-  fetched: number;
-  screenshots: number;
-}
 
 const oneLine = (text: string) => text.replace(/\s*\r?\n\s*/g, " / ").trim();
 
@@ -57,36 +41,6 @@ function arrivalDate(createdAt: string | undefined, fallback: string): string {
   if (!createdAt) return fallback;
   const parsed = new Date(createdAt);
   return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString().slice(0, 10);
-}
-
-/**
- * One groomed todo item per thread root; replies fold into the item as
- * `reply:` field lines. Spec §2 fields: quote, route, selector, screenshot
- * (downloaded into artifacts/feedback/<tag>/), author, timestamp.
- */
-function taskFields(
-  root: ApiComment,
-  replies: ApiComment[],
-  screenshotPath: string | null,
-  tag: string,
-): TaskField[] {
-  const fields: TaskField[] = [{ key: "quote", value: `"${oneLine(root.body)}"` }];
-  if (root.route) fields.push({ key: "route", value: root.route });
-  if (root.selector) fields.push({ key: "selector", value: root.selector });
-  // What the reviewer was doing, when the review was a guided pass (T-297):
-  // "this broke while approving" reads very differently from "this broke".
-  if (root.scenario_id) fields.push({ key: "scenario", value: root.scenario_id });
-  if (root.step_id) fields.push({ key: "step", value: root.step_id });
-  if (screenshotPath) fields.push({ key: "screenshot", value: screenshotPath });
-  // Preserve the release association even when a screenshot was unavailable.
-  fields.push({ key: "tag", value: tag });
-  fields.push({ key: "author", value: root.author_label });
-  fields.push({ key: "timestamp", value: root.created_at });
-  for (const reply of replies) {
-    fields.push({ key: "reply", value: `"${oneLine(reply.body)}" — ${reply.author_label}` });
-  }
-  fields.push({ key: "notes", value: "" });
-  return fields;
 }
 
 /** Shared plumbing: repo root, API config, and the tag's registered snapshot. */
@@ -115,92 +69,6 @@ async function resolveSnapshot(
     );
   }
   return { root, api, snapshotId: freeze.snapshotId };
-}
-
-export async function pullComments(options: PullOptions): Promise<PullResult> {
-  const log = options.log ?? (() => {});
-  const { root, api, snapshotId } = await resolveSnapshot(options.tag, options.cwd);
-
-  // `pull` writes the v1 ledger — `todo/todo.md`, `T-###` ids, screenshots into
-  // `artifacts/feedback/` — and never learned any other layout. On a current
-  // record it used to fail at the read with a raw ENOENT naming a path the user
-  // has no reason to expect (TASK-384). It refuses here instead, and it refuses
-  // *before* fetching, because the comments are consumed once: the failure has
-  // to leave them unfetched for triage to find.
-  const version = await readRecordVersion(root);
-  if (version.kind === "current") {
-    throw new Error(
-      "`forge comments pull` writes the pre-0.2 ledger (todo/todo.md) and has no path into the " +
-        `bundle — use \`forge comments triage ${options.tag}\` instead, which stages the same ` +
-        "comments for disposition and writes Feedback concepts with a resolution trail.",
-    );
-  }
-  if (version.kind !== "migratable") throw new Error(versionRefusal(version));
-
-  log(`Fetching unfetched comments for ${options.tag}…`);
-  const comments = await fetchUnfetchedComments(api, snapshotId);
-  if (comments.length === 0) {
-    log("No unfetched comments.");
-    return { created: 0, fetched: 0, screenshots: 0 };
-  }
-
-  const roots = comments.filter((c) => !c.parent_id);
-  const repliesByParent = new Map<string, ApiComment[]>();
-  for (const comment of comments) {
-    if (!comment.parent_id) continue;
-    const list = repliesByParent.get(comment.parent_id) ?? [];
-    list.push(comment);
-    repliesByParent.set(comment.parent_id, list);
-  }
-
-  const todoPath = path.join(root, "todo", "todo.md");
-  const doc = parseTodo(await fs.readFile(todoPath, "utf8"));
-  const feedbackDir = path.join(root, "artifacts", "feedback", options.tag);
-
-  let screenshots = 0;
-  for (const comment of roots) {
-    let screenshotPath: string | null = null;
-    if (comment.screenshot_url) {
-      await fs.mkdir(feedbackDir, { recursive: true });
-      const relPath = path.join("artifacts", "feedback", options.tag, `${comment.id}.png`);
-      await fs.writeFile(
-        path.join(root, relPath),
-        await downloadScreenshot(comment.screenshot_url),
-      );
-      screenshotPath = relPath;
-      screenshots += 1;
-    }
-    const title = oneLine(comment.body).slice(0, 80) || "Stakeholder comment";
-    addTask(doc, `Inbox — ${options.tag}`, {
-      id: nextTaskId(doc),
-      title,
-      fields: taskFields(
-        comment,
-        repliesByParent.get(comment.id) ?? [],
-        screenshotPath,
-        options.tag,
-      ),
-    });
-  }
-  await fs.writeFile(todoPath, serializeTodo(doc), "utf8");
-
-  // Mark fetched only after the local write succeeds (at-least-once): if the
-  // mark fails, the comments are safely in the Inbox and a re-pull would re-add
-  // them — warn rather than mark-before-save, which could silently drop them.
-  log("Marking comments fetched…");
-  try {
-    await markCommentsFetched(
-      api,
-      snapshotId,
-      comments.map((c) => c.id),
-    );
-  } catch (error) {
-    log(
-      `warning: comments saved to todo.md but not marked fetched (${error instanceof Error ? error.message : String(error)}); a re-pull of ${options.tag} may duplicate these ${comments.length} item(s).`,
-    );
-  }
-
-  return { created: roots.length, fetched: comments.length, screenshots };
 }
 
 export async function archiveTag(options: {
@@ -451,25 +319,6 @@ export async function applyTriage(options: {
 
 export function registerCommentsCommand(program: Command): void {
   const comments = program.command("comments").description("stakeholder comment operations");
-  comments
-    .command("pull")
-    .argument("<tag>", "freeze tag to pull comments for")
-    .description(
-      "fetch new stakeholder comments into todo.md under `## Inbox — <tag>` (screenshots land in artifacts/feedback/<tag>/) and mark them fetched",
-    )
-    .action(async (tag: string) => {
-      const result = await pullComments({ tag, log: console.log });
-      if (result.created === 0) {
-        console.log("Inbox unchanged — no unfetched comments.");
-        return;
-      }
-      console.log(
-        `Pulled ${result.fetched} comment(s) into ${result.created} todo item(s) under "Inbox — ${tag}"` +
-          (result.screenshots > 0 ? ` with ${result.screenshots} screenshot(s)` : "") +
-          ". Review and commit todo.md when groomed.",
-      );
-    });
-
   comments
     .command("archive")
     .argument("<tag>", "freeze tag whose snapshot should become read-only")

@@ -125,12 +125,6 @@ export async function archiveSnapshot(
   return { alreadyArchived: body.alreadyArchived === true };
 }
 
-export async function downloadScreenshot(screenshotUrl: string): Promise<Buffer> {
-  const res = await fetch(screenshotUrl);
-  if (!res.ok) throw new Error(`screenshot download failed (${res.status})`);
-  return Buffer.from(await res.arrayBuffer());
-}
-
 async function countUnfetchedComments(
   config: CommentsApiConfig,
   snapshotId: string,
