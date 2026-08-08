@@ -28,6 +28,13 @@ export async function readFreezes(repoRoot: string): Promise<FreezeRecord[]> {
     return Array.isArray(parsed) ? (parsed as FreezeRecord[]) : [];
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    // A freezes.json mangled by a bad merge should name itself, not crash with a
+    // bare parser message.
+    if (error instanceof SyntaxError) {
+      throw new Error(
+        `${freezesPath(repoRoot)} is not valid JSON — fix or delete it (${error.message})`,
+      );
+    }
     throw error;
   }
 }

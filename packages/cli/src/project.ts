@@ -47,6 +47,14 @@ export async function readProjectFile(repoRoot: string): Promise<ProjectFile> {
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    // `readRecordVersion` gives the friendly manifest-invalid message for the
+    // commands that check it first; this reader is reached by the ones that go
+    // straight for the projectId, so it must not crash with a bare parser line.
+    if (error instanceof SyntaxError) {
+      throw new Error(
+        `${projectFilePath(repoRoot)} is not valid JSON — fix or delete it (${error.message})`,
+      );
+    }
     throw error;
   }
 }

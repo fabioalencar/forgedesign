@@ -25,6 +25,11 @@ export async function readUserConfig(): Promise<UserConfig> {
     return JSON.parse(await fs.readFile(configPath(), "utf8")) as UserConfig;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    // A hand-edited config with a typo would otherwise crash every command that
+    // touches Cloud with a bare parser message naming no file.
+    if (error instanceof SyntaxError) {
+      throw new Error(`${configPath()} is not valid JSON — fix or delete it (${error.message})`);
+    }
     throw error;
   }
 }
