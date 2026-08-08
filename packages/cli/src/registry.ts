@@ -30,6 +30,12 @@ export async function readRegistry(): Promise<Registry> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return { projects: [] };
     }
+    // Read by `status`, the dashboard's project list, and every registered-project
+    // path — a malformed `projects.json` must name itself, not crash them all with
+    // a bare parser line (TASK-411).
+    if (error instanceof SyntaxError) {
+      throw new Error(`${registryPath()} is not valid JSON — fix or delete it (${error.message})`);
+    }
     throw error;
   }
 }
