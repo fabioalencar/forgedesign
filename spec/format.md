@@ -310,6 +310,21 @@ One concept per file: `id`, `title` as the one-line identity, dated fields, link
 (with `data-model.md`) are **runtime inputs**: they seed the scenario/role switcher on
 hosted reviews, so keeping them true has a visible payoff.
 
+A role declares its capabilities in a `permissions:` frontmatter list, which is the
+mechanism the runtime reads:
+
+```markdown
+---
+type: Role
+id: ROLE-002
+title: Approving manager
+permissions: [orders.view, orders.approve]
+---
+```
+
+These are the role's own; a scenario composes on top of them rather than restating them
+(see the scenario section below for the `role` link and the `+`/`-` composition rule).
+
 ### design/flows/FLOW-###.md and design/data-model.md
 
 Diagrams are Mermaid, always (DDR-056). A flow's body carries a `flowchart`; the data
@@ -348,10 +363,12 @@ before the prototype exists so an agent can build against it. Saved scenarios ve
 addition, never by silent mutation; a pin cites `SCENARIO-###@<version>` beside a Git
 commit.
 
-**Permissions compose through the role.** `role` links a `ROLE-###` rather than restating
-what that role can do — the role concept is the runtime input, and it owns that fact. A
-scenario's own `permissions` are **added** to the role's, and an entry prefixed with `-`
-**removes** one:
+**Permissions compose *on top of* the role — the scenario does not restate what the role
+already grants.** `role` links a `ROLE-###`, and the linked role's `permissions:` are the
+base set; the role concept owns that fact rather than the scenario duplicating it. On top
+of that base, a scenario's own `permissions` are **added**, and an entry prefixed with `-`
+**removes** one — so the effective set is the role's list plus the scenario's additions
+minus its removals:
 
 ```yaml
 role: ROLE-002                              # grants orders.view, orders.approve
