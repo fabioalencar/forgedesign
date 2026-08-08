@@ -400,7 +400,7 @@ produces the same file — which is what makes checking it against a regeneratio
 - Cross-references are bare IDs (`FEEDBACK-011`) or standard Markdown links. Tools must
   resolve both; humans may use either.
 - Markdown links SHOULD use OKF's recommended **bundle-relative absolute** form —
-  `[the pivot](/design/decisions/DDR-050-pivot-design-record.md)` — which survives a file
+  `[the template](/design/decisions/DDR-000-template.md)` — which survives a file
   moving within its directory.
 - An ID mentioned anywhere must exist somewhere in the record. This is a Forge rule, not an
   OKF one: OKF requires consumers to tolerate broken links, so a generic consumer will not
