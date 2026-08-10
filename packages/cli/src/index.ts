@@ -2,6 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { registerAddCommand } from "./commands/add.js";
+import { registerAdoptCommand } from "./commands/adopt.js";
 import { registerCommentsCommand } from "./commands/comments.js";
 import { registerDashCommand } from "./commands/dash.js";
 import { registerDdrCommand } from "./commands/ddr.js";
@@ -39,6 +40,7 @@ registerSkillsCommand(program);
 registerDdrCommand(program);
 registerQuestionCommand(program);
 registerAddCommand(program);
+registerAdoptCommand(program);
 registerTaskCommand(program);
 registerIntakeCommand(program);
 registerStatusCommand(program);
