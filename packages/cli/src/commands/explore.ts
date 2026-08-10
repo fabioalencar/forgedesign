@@ -1,10 +1,22 @@
 // forge explore (spec §2): speculative work happens on explore/<name>
 // branches, optionally in sketch mode. Promotion is a normal merge; when a
-// SKETCH.md rode along, it becomes a proposed DDR for the designer to finish.
+// SKETCH.md rode along, it becomes a draft DDR for the designer to finish.
+//
+// The promotion DDR is written the same way `forge ddr apply` writes one, and
+// that is the whole of TASK-418: this command used to write `decisions/` at the
+// repo root and number the file by parsing filenames out of that directory. On
+// a v0.2 record the bundle roots at `design/`, so the decision landed *outside*
+// the record — invisible to `forge doctor` and `forge index` — and its id was
+// allocated from a directory the record does not use, so it restarted at 001
+// beside whatever DDR-001 the record already had. It also wrote a pre-v0.2
+// body, with `- **Status**:` bullets and no frontmatter, which the format no
+// longer accepts as a concept at all.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { nextId, scanBundle, withFrontmatter } from "@forgedesign/format";
 import type { Command } from "commander";
+import { writeBundleIndex } from "../bundle-index.js";
 import { todayIsoDate } from "../freezes.js";
 import {
   assertExploreName,
@@ -14,6 +26,7 @@ import {
   isWorkingTreeClean,
   requireRepoRoot,
 } from "../git.js";
+import { requireCurrentRecord } from "../record-version.js";
 
 function sketchTemplate(name: string, date: string): string {
   return `# Sketch — ${name}
@@ -91,19 +104,6 @@ export async function startExplore(options: {
   return { branch, sketchPath };
 }
 
-async function nextDdrNumber(root: string): Promise<string> {
-  let max = 0;
-  try {
-    for (const file of await fs.readdir(path.join(root, "decisions"))) {
-      const n = Number(file.match(/^DDR-(\d+)/)?.[1] ?? 0);
-      if (n > max) max = n;
-    }
-  } catch {
-    // no decisions/ yet
-  }
-  return String(max + 1).padStart(3, "0");
-}
-
 export interface PromotionSynthesis {
   rationale: string;
   observations: Array<{ branch: string; note: string }>;
@@ -136,23 +136,21 @@ ${rationale || "(add the rationale before accepting this DDR)"}
 ${observationSection}`;
 }
 
+/**
+ * A promotion DDR as a v0.2 concept: frontmatter first, `draft` rather than the
+ * old `proposed` (which is not one of the format's decision statuses), and the
+ * body the designer finishes before accepting it.
+ */
 function ddrFromPromotion(
-  number: string,
+  id: string,
   name: string,
   date: string,
   sketch: string | null,
   synthesis: PromotionSynthesis | undefined,
 ): string {
-  const title = name.replace(/-/g, " ");
-  return `# DDR-${number} — ${title}
+  const body = `## Decision
 
-- **Status**: proposed
-- **Date**: ${date}
-- **Context source**: exploration branch explore/${name} (merged)
-
-## Decision
-
-(distill the promotion rationale and source material below into one paragraph, then set Status to accepted)
+(distill the promotion rationale and source material below into one paragraph, then set decision_status to accepted)
 
 ## Why
 
@@ -172,6 +170,17 @@ ${sketch.trim()}
     : ""
 }
 `;
+  return withFrontmatter(
+    {
+      type: "Decision",
+      id,
+      title: name.replace(/-/g, " "),
+      date,
+      decision_status: "draft",
+      context_source: `exploration branch explore/${name} (merged)`,
+    },
+    body,
+  );
 }
 
 export interface MergeResult {
@@ -181,8 +190,9 @@ export interface MergeResult {
 
 /**
  * Promotion: merge explore/<name> into the current main/master branch and
- * create a proposed DDR (left uncommitted, on purpose — the designer finishes
- * and accepts it). A sketch and comparison synthesis become source material.
+ * write a draft DDR into the record (left uncommitted, on purpose — the
+ * designer finishes and accepts it). A sketch and comparison synthesis become
+ * source material.
  */
 export async function mergeExplore(options: {
   name: string;
@@ -204,6 +214,13 @@ export async function mergeExplore(options: {
     throw new Error("working tree is not clean — commit or stash before merging");
   }
 
+  // Before the merge, not after: writing a DDR makes this a record writer, and
+  // DDR-095 gives a writer on a pre-0.2 record one sentence naming its way out
+  // rather than a second layout. Refusing *after* merging would leave the user
+  // holding a completed merge and an error, so the check happens while there is
+  // still nothing to undo. `--no-ddr` writes nothing, so it is exempt.
+  const recordRoot = options.ddr === false ? null : (await requireCurrentRecord(root)).recordRoot;
+
   // Capture main's tip before merging so we can tell whether SKETCH.md was
   // actually introduced by this branch, versus already sitting on main from a
   // prior promotion (which must NOT be re-converted — the re-conversion bug).
@@ -223,16 +240,28 @@ export async function mergeExplore(options: {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
-  if (options.ddr !== false) {
-    const number = await nextDdrNumber(root);
-    const date = todayIsoDate();
-    ddrPath = path.join(root, "decisions", `DDR-${number}-${options.name}.md`);
+  if (recordRoot !== null) {
+    // The id comes from the ids the record's own concepts declare, exactly as
+    // `forge ddr apply` allocates it — not from filenames in a directory, which
+    // is how this ended up numbering from a tree the record does not read.
+    const bundle = await scanBundle(root, { recordRoot });
+    const id = nextId(
+      bundle.concepts.flatMap((concept) =>
+        concept.type === "Decision" && concept.id ? [concept.id] : [],
+      ),
+      "DDR",
+    );
+    const relPath = path.join(recordRoot, "decisions", `${id}-${options.name}.md`);
+    ddrPath = path.join(root, relPath);
     await fs.mkdir(path.dirname(ddrPath), { recursive: true });
     await fs.writeFile(
       ddrPath,
-      ddrFromPromotion(number, options.name, date, sketch, options.synthesis),
+      ddrFromPromotion(id, options.name, todayIsoDate(), sketch, options.synthesis),
       "utf8",
     );
+    // The writer that adds a concept keeps the index true (T-300) — otherwise
+    // the promotion leaves the record failing its own stale-index check.
+    await writeBundleIndex(root);
   }
   return { branch, ddrPath };
 }
@@ -259,14 +288,14 @@ export function registerExploreCommand(program: Command): void {
   explore
     .command("merge")
     .argument("<name>", "exploration to promote")
-    .option("--no-ddr", "skip creating the proposed DDR")
+    .option("--no-ddr", "skip writing the draft DDR")
     .description("promote an exploration: merge explore/<name> into main")
     .action(async (name: string, opts: { ddr: boolean }) => {
       const result = await mergeExplore({ name, ddr: opts.ddr });
       console.log(`Merged ${result.branch}.`);
       if (result.ddrPath) {
         console.log(
-          `Created ${path.relative(process.cwd(), result.ddrPath)} (proposed) — finish it, set it to accepted, and commit.`,
+          `Created ${path.relative(process.cwd(), result.ddrPath)} (draft) — finish it, set decision_status to accepted, and commit.`,
         );
       }
     });

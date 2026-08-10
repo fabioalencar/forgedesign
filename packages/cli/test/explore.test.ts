@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ensureExplore, mergeExplore, startExplore } from "../src/commands/explore.js";
+import { initProject } from "../src/commands/init.js";
 
 let sandbox: string;
 let repo: string;
@@ -19,6 +20,11 @@ beforeEach(async () => {
   git("config", "user.email", "t@t.co");
   git("config", "user.name", "T");
   await fs.writeFile(path.join(repo, "README.md"), "seed\n");
+  // A promotion DDR is a write into the record, so these tests need one. Before
+  // TASK-418 they ran against a bare repo and passed, which is exactly how a
+  // command writing outside the bundle went unnoticed: nothing in the fixture
+  // had a bundle for it to miss.
+  await initProject(repo);
   git("add", "-A");
   git("commit", "-qm", "seed");
 });
@@ -74,7 +80,7 @@ describe("ensureExplore", () => {
 });
 
 describe("mergeExplore", () => {
-  it("merges into main and converts SKETCH.md into a proposed DDR", async () => {
+  it("merges into main and converts SKETCH.md into a draft DDR inside the record", async () => {
     await startExplore({ name: "bold-cards", sketch: true, cwd: repo });
     await fs.appendFile(path.join(repo, "sketches/SKETCH.md"), "\nVerdict: bold wins.\n");
     git("add", "-A");
@@ -84,19 +90,41 @@ describe("mergeExplore", () => {
     const result = await mergeExplore({ name: "bold-cards", cwd: repo });
 
     expect(git("log", "-1", "--format=%s")).toBe("Promote explore/bold-cards");
-    expect(result.ddrPath).toBe(path.join(repo, "decisions/DDR-001-bold-cards.md"));
+    // Inside the bundle (TASK-418). This used to be `decisions/` at the repo
+    // root — outside the record, so doctor and index never saw the decision.
+    expect(result.ddrPath).toBe(path.join(repo, "design/decisions/DDR-001-bold-cards.md"));
     const ddr = await fs.readFile(result.ddrPath!, "utf8");
-    expect(ddr).toContain("# DDR-001 — bold cards");
-    expect(ddr).toContain("- **Status**: proposed");
+    // A v0.2 concept: frontmatter, and a status the format actually has. The
+    // old body was `# DDR-001 — …` with `- **Status**: proposed`, which is not
+    // a concept at all — doctor would have refused it the moment it landed
+    // somewhere doctor could see.
+    expect(ddr).toMatch(/^---\n/);
+    expect(ddr).toContain("type: Decision");
+    expect(ddr).toContain("id: DDR-001");
+    expect(ddr).toContain("decision_status: draft");
+    expect(ddr).not.toContain("- **Status**:");
     expect(ddr).toContain("exploration branch explore/bold-cards");
     expect(ddr).toContain("Verdict: bold wins.");
     // left uncommitted for the designer to finish
-    expect(git("status", "--porcelain", "-uall")).toContain("decisions/DDR-001-bold-cards.md");
+    expect(git("status", "--porcelain", "-uall")).toContain(
+      "design/decisions/DDR-001-bold-cards.md",
+    );
+    // The writer that adds a concept keeps the index true, or the promotion
+    // leaves the record failing doctor's stale-index check.
+    expect(await fs.readFile(path.join(repo, "design/index.md"), "utf8")).toContain(
+      "decisions/DDR-001-bold-cards.md",
+    );
   });
 
-  it("numbers the DDR after the highest existing one", async () => {
-    await fs.mkdir(path.join(repo, "decisions"), { recursive: true });
-    await fs.writeFile(path.join(repo, "decisions/DDR-007-old.md"), "# DDR-007 — Old\n");
+  it("numbers the DDR from the ids the record declares", async () => {
+    // The id comes from the concepts' own `id:` frontmatter, the way
+    // `forge ddr apply` allocates it. Numbering used to be read off filenames
+    // in a root `decisions/` the record does not use, so it restarted at 001
+    // next to whatever DDR-001 the record already held (TASK-418).
+    await fs.writeFile(
+      path.join(repo, "design/decisions/DDR-007-old.md"),
+      "---\ntype: Decision\nid: DDR-007\ntitle: Old\ndate: 2026-01-01\ndecision_status: accepted\n---\n## Decision\n\nOld.\n",
+    );
     git("add", "-A");
     git("commit", "-qm", "existing ddr");
 
@@ -109,7 +137,7 @@ describe("mergeExplore", () => {
     expect(result.ddrPath).toContain("DDR-008-next.md");
   });
 
-  it("creates a proposed DDR for a normal branch and carries comparison synthesis into it", async () => {
+  it("creates a draft DDR for a normal branch and carries comparison synthesis into it", async () => {
     await startExplore({ name: "plain", cwd: repo });
     await fs.writeFile(path.join(repo, "idea.txt"), "x\n");
     git("add", "-A");
@@ -126,7 +154,7 @@ describe("mergeExplore", () => {
         ],
       },
     });
-    expect(result.ddrPath).toBe(path.join(repo, "decisions/DDR-001-plain.md"));
+    expect(result.ddrPath).toBe(path.join(repo, "design/decisions/DDR-001-plain.md"));
     const ddr = await fs.readFile(result.ddrPath!, "utf8");
     expect(ddr).toContain("## Comparison synthesis");
     expect(ddr).toContain("The compact navigation makes the primary action clearer.");
