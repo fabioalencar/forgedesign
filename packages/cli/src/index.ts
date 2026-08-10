@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { registerAddCommand } from "./commands/add.js";
 import { registerCommentsCommand } from "./commands/comments.js";
 import { registerDashCommand } from "./commands/dash.js";
 import { registerDdrCommand } from "./commands/ddr.js";
@@ -37,6 +38,7 @@ registerPublishCommand(program);
 registerSkillsCommand(program);
 registerDdrCommand(program);
 registerQuestionCommand(program);
+registerAddCommand(program);
 registerTaskCommand(program);
 registerIntakeCommand(program);
 registerStatusCommand(program);

@@ -1,5 +1,3 @@
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 /**
@@ -13,14 +11,14 @@ import { defineConfig } from "vitest/config";
  * file invalid JSON — which then failed every test that read it, in a way whose
  * error pointed at the registry rather than at the tests that filled it.
  *
- * Setting it here rather than per file means a new test cannot forget. Files
- * that need their own `FORGE_HOME` (for a config.json beside it) still override
- * this in their own setup.
+ * That fix relocated the file but kept it shared, so the race survived it and
+ * fired again on 2026-08-10 the moment another test file started calling
+ * `forge init`. The directory is now per worker, which removes the race rather
+ * than moving it — see `test/setup-forge-home.ts`, which has to run as a setup
+ * file because the worker id only exists inside the worker.
  */
 export default defineConfig({
   test: {
-    env: {
-      FORGE_HOME: path.join(tmpdir(), "forgedesign-cli-test-home"),
-    },
+    setupFiles: ["./test/setup-forge-home.ts"],
   },
 });

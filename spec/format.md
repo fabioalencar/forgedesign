@@ -75,18 +75,18 @@ design/
 | `design/brief.md` | Genesis requirements and definitions the project started from | init |
 | `design/todos.md` | Tasks with status, dates, and genesis (what caused them) | init |
 | `design/decisions/` | One file per decision, with rationale and alternatives | init (holds the template DDR) |
-| `design/glossary/` | One file per term that carries project meaning | on demand |
-| `design/questions/` | Unresolved questions to explore with stakeholders | on demand |
-| `design/feedback/` | Every piece of feedback from every source, with disposition | on demand |
-| `design/stakeholders/` | Minimal stakeholder profiles and their contributions | on demand |
-| `design/stories/` | User stories introduced along the iterations | on demand |
-| `design/roles/` | Role assumptions; seeds the role switcher on hosted reviews | on demand |
-| `design/flows/` | End-to-end process flows (Mermaid, DDR-056) | on demand |
-| `design/scenarios/` | What the prototype runs under for one review: role, permissions, flags, route rules, dataset, review flow (DDR-063) | on demand |
-| `design/data-model.md` | Entities, shapes, enums, relationships, business rules observed in the prototype — what the data *is*, not how to serve it | on demand |
-| `design/calendar.md` | Deadlines, checkpoints, timeline; references decisions and freezes by ID | on demand |
-| `design/design-system.md` | Design tokens and brand direction; links `components.md` | on demand |
-| `design/components.md` | Component inventory | on demand |
+| `design/glossary/` | One file per term that carries project meaning | on demand (`forge add`) |
+| `design/questions/` | Unresolved questions to explore with stakeholders | on demand (`forge question`) |
+| `design/feedback/` | Every piece of feedback from every source, with disposition | on demand (`forge comments triage apply`) |
+| `design/stakeholders/` | Minimal stakeholder profiles and their contributions | on demand (`forge add`) |
+| `design/stories/` | User stories introduced along the iterations | on demand (`forge add`) |
+| `design/roles/` | Role assumptions; seeds the role switcher on hosted reviews | on demand (`forge add`) |
+| `design/flows/` | End-to-end process flows (Mermaid, DDR-056) | on demand (`forge add`) |
+| `design/scenarios/` | What the prototype runs under for one review: role, permissions, flags, route rules, dataset, review flow (DDR-063) | on demand (`forge add`) |
+| `design/data-model.md` | Entities, shapes, enums, relationships, business rules observed in the prototype — what the data *is*, not how to serve it | on demand (`forge add`) |
+| `design/calendar.md` | Deadlines, checkpoints, timeline; references decisions and freezes by ID | on demand (`forge add`) |
+| `design/design-system.md` | Design tokens and brand direction; links `components.md` | on demand (`forge add`) |
+| `design/components.md` | Component inventory | on demand (`forge add`) |
 | `design/feature-log.md` | Features closed per freeze | **generated** (at freeze) |
 
 **Outside the bundle**, at the repo root: `forge.json` (project manifest, carries
