@@ -118,21 +118,30 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
         : null;
     const pin = generatePin();
     let snapshotId: string | null = null;
-    let projectId: string | null = null;
-    let projectFileCreated = false;
+
+    // Every freeze, not only one with a comment API configured (TASK-416).
+    // `projectId` is the repo's identity — `forge publish` sends it to Cloud as
+    // the thing a hosted prototype belongs to — and minting it here used to sit
+    // inside the `if (commentsConfig)` below, left over from when the comment
+    // API was the only thing that wanted an id. The consequence was that a
+    // Cloud customer who had only run `forge login` froze successfully, got no
+    // id, and then met `forge publish: this repo has no projectId in forge.json
+    // — freeze once first`, which no amount of freezing would fix.
+    //
+    // Read the manifest before ensureProjectId touches it, so a rollback can put
+    // back exactly what was there rather than deleting a file the user wrote
+    // (TASK-335).
+    const beforeProjectFile = await fs
+      .readFile(path.join(root, "forge.json"), "utf8")
+      .catch(() => null as string | null);
+    const project = await ensureProjectId(root); // once — reused for registration
+    const projectId = project.projectId;
+    const projectFileCreated = project.created;
+    if (project.created) {
+      cleanupProjectFile = () => revertProjectId(root, beforeProjectFile);
+    }
+
     if (commentsConfig) {
-      // Read the manifest before ensureProjectId touches it, so a rollback can
-      // put back exactly what was there rather than deleting a file the user
-      // wrote (TASK-335).
-      const before = await fs
-        .readFile(path.join(root, "forge.json"), "utf8")
-        .catch(() => null as string | null);
-      const project = await ensureProjectId(root); // once — reused for registration
-      projectId = project.projectId;
-      projectFileCreated = project.created;
-      if (project.created) {
-        cleanupProjectFile = () => revertProjectId(root, before);
-      }
       // The snapshot is still minted and registered here — the comment API has
       // to know a freeze exists before anyone can comment on it. What no longer
       // happens is injecting the toolbar into the build: freeze produces, Cloud

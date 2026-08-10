@@ -92,6 +92,35 @@ describe("runFreeze", () => {
     expect(git("ls-files", "hub")).toContain("hub/index.html");
   });
 
+  it("mints the project identity even with no comment API configured (TASK-416)", async () => {
+    // FORGE_HOME here holds no config.json, so this is a creator who has only
+    // signed in to Cloud. Minting used to sit inside the comment-API branch, so
+    // this freeze succeeded and left no projectId — and `forge publish` then
+    // refused with "no projectId in forge.json — freeze once first", advice
+    // that no amount of freezing could satisfy. The paid path was unreachable
+    // for exactly the users who had never configured the legacy comment API.
+    const root = await makeDesignRepo();
+    await runFreeze({ tag: "alpha", message: "first cut", cwd: root });
+
+    const manifest = JSON.parse(await fs.readFile(path.join(root, "forge.json"), "utf8"));
+    expect(manifest.projectId).toMatch(/^[0-9a-f-]{36}$/);
+    // Committed with the freeze, not left dirty: the id is part of what the
+    // freeze commit carries.
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: root }).toString().trim();
+    expect(git("status", "--porcelain")).toBe("");
+    expect(git("show", "HEAD:forge.json")).toContain(manifest.projectId);
+  });
+
+  it("keeps that identity stable across freezes", async () => {
+    const root = await makeDesignRepo();
+    const read = async () =>
+      JSON.parse(await fs.readFile(path.join(root, "forge.json"), "utf8")).projectId;
+    await runFreeze({ tag: "alpha", message: "a", cwd: root });
+    const first = await read();
+    await runFreeze({ tag: "beta", message: "b", cwd: root });
+    expect(await read()).toBe(first);
+  });
+
   it("supports repeated freezes with distinct tags", async () => {
     const root = await makeDesignRepo();
     await runFreeze({ tag: "alpha", message: "a", cwd: root });
