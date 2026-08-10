@@ -120,10 +120,18 @@ describe("buildPrototype — prototype/ scaffold fallback", () => {
     expect(builds.storybookDir).toBe(path.join(root, "prototype/storybook-static"));
   });
 
-  it("points at forge.json when there is no prototype/ to fall back to", async () => {
+  it("says what to put in forge.json when there is no prototype/ to fall back to", async () => {
     const root = path.join(sandbox, "bare");
     await fs.mkdir(root, { recursive: true });
 
-    await expect(buildPrototype(root)).rejects.toThrow(/declare a "build" block in forge.json/);
+    // The message a new user meets on their first freeze, so it has to be
+    // actionable on its own. It used to end in `(DDR-052)` — a citation the
+    // public record does not contain and a user's own record eventually will,
+    // meaning a different decision entirely (TASK-415).
+    const failure = buildPrototype(root);
+    await expect(failure).rejects.toThrow(/add a "build" block to forge.json/);
+    await expect(failure).rejects.toThrow(/"command": "npm run build"/);
+    await expect(failure).rejects.toThrow(/"output": "dist"/);
+    await expect(failure).rejects.not.toThrow(/DDR-\d/);
   });
 });

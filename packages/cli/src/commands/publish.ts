@@ -42,7 +42,11 @@ export function registerPublishCommand(program: Command): void {
 
       const buildDir = await prototypeOutputDir(root);
       if (!buildDir) {
-        console.error('forge publish: forge.json declares no "build" — nothing to host (DDR-052).');
+        console.error(
+          'forge publish: forge.json declares no "build" — there is nothing to host.\n' +
+            "Declare how this project builds, then freeze and publish again:\n" +
+            '  "build": { "command": "npm run build", "output": "dist" }',
+        );
         process.exitCode = 1;
         return;
       }

@@ -7,6 +7,20 @@ import { type BuildConfig, readProjectFile } from "./project.js";
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * What to add to forge.json, spelled out in every message that asks for it.
+ *
+ * These errors used to end in `(DDR-052)`, which is unreadable twice over from
+ * outside this repo: the public record has no DDR-052, and a user's *own* record
+ * eventually will — a different decision entirely (TASK-415). A citation nobody
+ * can follow is worth less than the two lines it takes to say the thing.
+ */
+const BUILD_BLOCK_EXAMPLE =
+  'add a "build" block to forge.json, e.g.\n' +
+  '  "build": { "command": "npm run build", "output": "dist" }\n' +
+  'where "output" is the directory that command writes. Optional: "dir" if the app\n' +
+  'lives in a subdirectory, and "storybook" taking the same command/output pair.';
+
 export type PackageManager = "pnpm" | "yarn" | "npm";
 
 /** Detected from the prototype's lockfile; npm is the fallback. */
@@ -62,10 +76,10 @@ async function runStep(step: BuildStep): Promise<string> {
  */
 async function configuredSteps(repoRoot: string, config: BuildConfig): Promise<BuildStep[]> {
   if (!config.command?.trim()) {
-    throw new Error('forge.json "build" needs a "command" (DDR-052)');
+    throw new Error('forge.json "build" needs a "command" — e.g. "command": "npm run build"');
   }
   if (!config.output?.trim()) {
-    throw new Error('forge.json "build" needs an "output" directory (DDR-052)');
+    throw new Error('forge.json "build" needs an "output" directory — e.g. "output": "dist"');
   }
   const cwd = path.resolve(repoRoot, config.dir?.trim() || ".");
   try {
@@ -84,7 +98,7 @@ async function configuredSteps(repoRoot: string, config: BuildConfig): Promise<B
   const storybook = config.storybook;
   if (storybook) {
     if (!storybook.command?.trim() || !storybook.output?.trim()) {
-      throw new Error('forge.json "build.storybook" needs both "command" and "output" (DDR-052)');
+      throw new Error('forge.json "build.storybook" needs both a "command" and an "output"');
     }
     steps.push({
       argv: splitCommand(storybook.command),
@@ -111,7 +125,7 @@ async function scaffoldSteps(repoRoot: string): Promise<BuildStep[]> {
     scripts = pkg.scripts ?? {};
   } catch {
     throw new Error(
-      'prototype/package.json not found — declare a "build" block in forge.json (DDR-052)',
+      `forge.json declares no "build", and there is no prototype/package.json to fall back on — ${BUILD_BLOCK_EXAMPLE}`,
     );
   }
   for (const script of ["build", "build-storybook"]) {

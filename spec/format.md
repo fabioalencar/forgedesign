@@ -90,7 +90,9 @@ design/
 | `design/feature-log.md` | Features closed per freeze | **generated** (at freeze) |
 
 **Outside the bundle**, at the repo root: `forge.json` (project manifest, carries
-`formatVersion` and `recordRoot`), `freezes.json` (machine-readable freeze registry,
+`formatVersion`, `recordRoot`, and the `build` block — `{ "command", "output", "dir"?,
+"storybook"? }` — that tells `forge freeze` how this project builds and where the build
+lands), `freezes.json` (machine-readable freeze registry,
 `FREEZE-###`), `datasets/`, `tokens/tokens.json` (DTCG). These are the executable layer —
 machine contracts, not knowledge concepts — and OKF constrains only `.md` files. Scenarios
 are *not* among them: a scenario is authored as a concept and its runtime JSON is emitted
