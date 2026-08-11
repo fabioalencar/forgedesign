@@ -68,8 +68,8 @@ afterEach(async () => {
   await fs.rm(sandbox, { recursive: true, force: true });
 });
 
-describe("freeze with comment API configured", () => {
-  it("registers the snapshot and records snapshotId, leaving the build untouched", async () => {
+describe("freeze no longer registers a snapshot (DDR-104)", () => {
+  it("calls nothing, records no snapshot, and leaves the build untouched", async () => {
     const root = await makeDesignRepo(sandbox);
     const result = await runFreeze({ tag: "alpha", message: "x", cwd: root });
 
@@ -82,33 +82,33 @@ describe("freeze with comment API configured", () => {
     expect(html).not.toContain("data-snapshot-id");
     await expect(fs.access(path.join(root, "prototype/dist/forge-overlay.js"))).rejects.toThrow();
 
-    // registration call
-    expect(captured).toHaveLength(1);
-    const reg = captured[0]!;
-    expect(reg.method).toBe("POST");
-    expect(reg.url).toBe("/snapshots");
-    expect(reg.authorization).toBe("Bearer sk-test");
-    expect(reg.body.tag).toBe("alpha");
-    expect(reg.body.pin).toMatch(/^\d{6}$/);
-    // No URL at freeze time any more: freeze produces and Cloud serves
-    // (DDR-073, TASK-334). The snapshot still registers, because the comment
-    // API has to know the freeze exists before `forge publish` hosts it.
-    expect(reg.body.previewUrl).toBeNull();
-    expect(reg.body.id).toBe(result.record.snapshotId);
+    // Nothing is sent anywhere. The gate is registered by `forge publish` now,
+    // with a credential that stays on the control plane — registering it here
+    // needed the deployment-wide key in a creator's own config, which
+    // authorises every tenant's comments (TASK-420).
+    expect(captured).toHaveLength(0);
 
-    // identity + records committed, clean tree
+    // The PIN is still the freeze's, and still recorded: publish hands it to
+    // the control plane, which registers the gate under it.
+    expect(result.record.pin).toMatch(/^\d{6}$/);
+    expect(result.record.snapshotId).toBeNull();
+
+    // identity still minted every freeze (TASK-416), records committed, clean tree
     const forgeJson = JSON.parse(await fs.readFile(path.join(root, "forge.json"), "utf8"));
-    expect(reg.body.projectId).toBe(forgeJson.projectId);
+    expect(forgeJson.projectId).toMatch(/^[0-9a-f-]{36}$/);
     const [entry] = await readFreezes(root);
-    expect(entry?.snapshotId).toBe(result.record.snapshotId);
+    expect(entry?.pin).toBe(result.record.pin);
     expect(execFileSync("git", ["status", "--porcelain"], { cwd: root }).toString()).toBe("");
   });
 
   it("keeps the same projectId across freezes", async () => {
     const root = await makeDesignRepo(sandbox);
+    const read = async () =>
+      JSON.parse(await fs.readFile(path.join(root, "forge.json"), "utf8")).projectId;
     await runFreeze({ tag: "alpha", message: "a", cwd: root });
+    const first = await read();
     await runFreeze({ tag: "beta", message: "b", cwd: root });
-    expect(captured[0]!.body.projectId).toBe(captured[1]!.body.projectId);
+    expect(await read()).toBe(first);
   });
 
   it("rolls back the tag, and restores forge.json rather than deleting it", async () => {
@@ -119,10 +119,10 @@ describe("freeze with comment API configured", () => {
     const root = await makeDesignRepo(sandbox);
     const manifestPath = path.join(root, "forge.json");
     const before = await fs.readFile(manifestPath, "utf8");
-    respondWith = 500;
+    await breakTheBuild(root);
 
     await expect(runFreeze({ tag: "alpha", message: "x", cwd: root })).rejects.toThrow(
-      /snapshot registration failed/,
+      /prototype build failed/,
     );
     expect(execFileSync("git", ["tag"], { cwd: root }).toString().trim()).toBe("");
     expect(await fs.readFile(manifestPath, "utf8")).toBe(before);
@@ -135,23 +135,38 @@ describe("freeze with comment API configured", () => {
     await fs.rm(manifestPath);
     // freeze refuses a dirty tree, so the removal has to be committed first
     execFileSync("git", ["commit", "-am", "drop manifest"], { cwd: root });
-    respondWith = 500;
+    await breakTheBuild(root);
 
     await expect(runFreeze({ tag: "alpha", message: "x", cwd: root })).rejects.toThrow(
-      /snapshot registration failed/,
+      /prototype build failed/,
     );
     await expect(fs.access(manifestPath)).rejects.toThrow();
   });
 
-  it("skips overlay and registration with a warning when unconfigured", async () => {
+  it("says nothing about a comment API, because a freeze no longer needs one", async () => {
+    // The old warning — "set commentsApiUrl and commentsApiKey to enable
+    // stakeholder comments" — pointed a creator at a credential they must never
+    // hold (TASK-420). With the gate minted at publish there is nothing to
+    // configure and nothing to warn about.
     await fs.rm(path.join(process.env.FORGE_HOME!, "config.json"));
     const root = await makeDesignRepo(sandbox);
     const result = await runFreeze({ tag: "alpha", message: "x", cwd: root });
 
-    expect(result.warnings.join(" ")).toContain("comment overlay skipped");
-    expect(result.record.snapshotId).toBeNull();
+    expect(result.warnings.join(" ")).not.toContain("commentsApiUrl");
+    expect(result.record.pin).toMatch(/^\d{6}$/);
     expect(captured).toHaveLength(0);
     const html = await fs.readFile(path.join(root, "prototype/dist/index.html"), "utf8");
     expect(html).not.toContain("forge-overlay-script");
   });
 });
+/** Makes the prototype build fail, which is now the first thing that can go
+ *  wrong *after* the identity is written — so it is what exercises the
+ *  rollback. Registration used to be that trigger; there is nothing to fail
+ *  there any more (DDR-104). */
+async function breakTheBuild(root: string): Promise<void> {
+  const pkgPath = path.join(root, "prototype/package.json");
+  const pkg = JSON.parse(await fs.readFile(pkgPath, "utf8"));
+  pkg.scripts.build = 'node -e "process.exit(1)"';
+  await fs.writeFile(pkgPath, JSON.stringify(pkg, null, 2), "utf8");
+  execFileSync("git", ["commit", "-am", "break the build"], { cwd: root });
+}

@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { Command } from "commander";
 import { prototypeOutputDir } from "../build.js";
-import { readFreezes } from "../freezes.js";
+import { readFreezes, setFreezeSnapshotId } from "../freezes.js";
 import { repoRoot } from "../git.js";
 import { readProjectFile } from "../project.js";
 import { publishBuild, withdrawPublished } from "../publish.js";
@@ -57,7 +57,7 @@ export function registerPublishCommand(program: Command): void {
         projectId,
         repoName: path.basename(root),
         tag,
-        snapshotId: freeze.snapshotId,
+        pin: freeze.pin,
         force: options.force,
       });
 
@@ -65,6 +65,13 @@ export function registerPublishCommand(program: Command): void {
         console.error(`\nforge publish: ${outcome.refusal.error}`);
         process.exitCode = 1;
         return;
+      }
+
+      // Record where the gate landed. The control plane mints the snapshot now
+      // (DDR-104), so this is the first moment the repo can know its id — and
+      // `forge comments` still reads it from here until the proxy lands.
+      if (outcome.result.snapshotId && outcome.result.snapshotId !== freeze.snapshotId) {
+        await setFreezeSnapshotId(root, tag, outcome.result.snapshotId);
       }
 
       const { url, shortUrl, fileCount, freezesUsed } = outcome.result;

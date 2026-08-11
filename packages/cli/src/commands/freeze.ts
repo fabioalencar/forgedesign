@@ -1,10 +1,9 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
 import { buildPrototype, type PrototypeBuilds } from "../build.js";
 import { bundleRootOf } from "../bundle-index.js";
-import { registerSnapshot } from "../comments-client.js";
 import { readUserConfig } from "../config.js";
 import { generateFeatureLog } from "../feature-log.js";
 import {
@@ -105,6 +104,25 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
 
   let cleanupProjectFile: (() => Promise<void>) | null = null;
   try {
+    // Identity before the build, so the rollback covers a failed build too.
+    // It used to sit after registration, which is where it happened to be when
+    // registration was the only caller — and it left a window where a build
+    // failure could not restore a manifest that had already been written
+    // (TASK-335's lesson, now with a wider guard).
+    //
+    // Read the manifest before ensureProjectId touches it, so a rollback puts
+    // back exactly what was there rather than deleting a file the user wrote.
+    const beforeProjectFile = await fs
+      .readFile(path.join(root, "forge.json"), "utf8")
+      .catch(() => null as string | null);
+    // The repo identity `forge publish` sends to Cloud (TASK-416). Minted on
+    // every freeze, not only one with a comment API configured.
+    const project = await ensureProjectId(root);
+    const projectFileCreated = project.created;
+    if (project.created) {
+      cleanupProjectFile = () => revertProjectId(root, beforeProjectFile);
+    }
+
     log("Building prototype and Storybook…");
     const builds = await buildPrototype(root);
 
@@ -117,7 +135,10 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
         ? { apiUrl: config.commentsApiUrl, apiKey: config.commentsApiKey }
         : null;
     const pin = generatePin();
-    let snapshotId: string | null = null;
+    // Null until `forge publish` mints the gate and writes the id back
+    // (DDR-104). Freezes cut before that change carry a real id here and the
+    // comment commands still read it, which is why the field stays.
+    const snapshotId: string | null = null;
 
     // Every freeze, not only one with a comment API configured (TASK-416).
     // `projectId` is the repo's identity — `forge publish` sends it to Cloud as
@@ -128,32 +149,19 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
     // id, and then met `forge publish: this repo has no projectId in forge.json
     // — freeze once first`, which no amount of freezing would fix.
     //
-    // Read the manifest before ensureProjectId touches it, so a rollback can put
-    // back exactly what was there rather than deleting a file the user wrote
-    // (TASK-335).
-    const beforeProjectFile = await fs
-      .readFile(path.join(root, "forge.json"), "utf8")
-      .catch(() => null as string | null);
-    const project = await ensureProjectId(root); // once — reused for registration
-    const projectId = project.projectId;
-    const projectFileCreated = project.created;
-    if (project.created) {
-      cleanupProjectFile = () => revertProjectId(root, beforeProjectFile);
-    }
 
-    if (commentsConfig) {
-      // The snapshot is still minted and registered here — the comment API has
-      // to know a freeze exists before anyone can comment on it. What no longer
-      // happens is injecting the toolbar into the build: freeze produces, Cloud
-      // serves, and the toolbar is added per response at serve time (DDR-073).
-      // Injecting here made a hosted freeze load it twice (TASK-357), and left
-      // the artifact carrying a review layer it should not contain.
-      snapshotId = randomUUID();
-    } else {
-      warnings.push(
-        "comment overlay skipped — set commentsApiUrl and commentsApiKey in ~/.forge/config.json to enable stakeholder comments",
-      );
-    }
+    // No snapshot is registered here any more (DDR-104). Freeze produces and
+    // Cloud serves (DDR-073), and a PIN gate is a property of *serving* — so
+    // `forge publish` mints the snapshot, using a credential that stays on the
+    // control plane. Registering it here required the deployment-wide
+    // `COMMENTS_API_KEY` in a creator's own config, which authorises every
+    // tenant's comments and so could never be a customer credential; the
+    // consequence was that a Cloud creator froze with no snapshot and published
+    // with no gate (TASK-419, TASK-420).
+    //
+    // The PIN is still generated and printed here. It belongs to the freeze, it
+    // goes into `freezes.json` with it, and publish hands it to the control
+    // plane, which registers the gate under it.
 
     // The scenario runtime bundle rides along with the overlay: both must be in
     // the build before it deploys, because a hosted freeze is exactly where the
@@ -172,17 +180,6 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
     // worse than a column that is empty from here on (TASK-334).
     const previewUrl = null;
     const storybookUrl = null;
-
-    if (commentsConfig && snapshotId && projectId) {
-      log("Registering snapshot with the comment API…");
-      await registerSnapshot(commentsConfig, {
-        id: snapshotId,
-        projectId,
-        tag: options.tag,
-        pin,
-        previewUrl,
-      });
-    }
 
     const date = todayIsoDate();
 

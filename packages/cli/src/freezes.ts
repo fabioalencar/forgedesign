@@ -45,6 +45,27 @@ export async function appendFreeze(repoRoot: string, record: FreezeRecord): Prom
   await fs.writeFile(freezesPath(repoRoot), `${JSON.stringify(freezes, null, 2)}\n`, "utf8");
 }
 
+/**
+ * Records the snapshot the control plane minted for an already-published tag
+ * (DDR-104).
+ *
+ * The only field a freeze entry gains after it is written. A freeze is immutable
+ * and `freezes.json` is its record, so this is deliberately narrow: it updates
+ * one key on one entry and refuses to invent an entry that is not there.
+ */
+export async function setFreezeSnapshotId(
+  repoRoot: string,
+  tag: string,
+  snapshotId: string,
+): Promise<boolean> {
+  const freezes = await readFreezes(repoRoot);
+  const entry = findFreeze(freezes, tag);
+  if (!entry) return false;
+  entry.snapshotId = snapshotId;
+  await fs.writeFile(freezesPath(repoRoot), `${JSON.stringify(freezes, null, 2)}\n`, "utf8");
+  return true;
+}
+
 export function findFreeze(freezes: FreezeRecord[], tag: string): FreezeRecord | undefined {
   return freezes.find((f) => f.tag === tag);
 }

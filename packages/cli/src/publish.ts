@@ -121,6 +121,11 @@ export interface PublishResult {
   slug: string;
   tag: string;
   fileCount: number;
+  /**
+   * The snapshot the control plane registered for this freeze (DDR-104).
+   * Optional so a service that predates the change still parses.
+   */
+  snapshotId?: string;
   freezesUsed: number;
 }
 
@@ -136,7 +141,8 @@ export async function publishBuild(input: {
   projectId: string;
   repoName: string;
   tag: string;
-  snapshotId?: string | null;
+  /** the six digits `forge freeze` generated; the control plane gates on it (DDR-104) */
+  pin: string;
   /** publish even when the service thinks the build carries a secret (TASK-366) */
   force?: boolean;
 }): Promise<{ ok: true; result: PublishResult } | { ok: false; refusal: PublishRefusal }> {
@@ -167,7 +173,7 @@ export async function publishBuild(input: {
       projectId: input.projectId,
       repoName: input.repoName,
       tag: input.tag,
-      snapshotId: input.snapshotId ?? undefined,
+      pin: input.pin,
       force: input.force === true ? true : undefined,
       files,
     }),
