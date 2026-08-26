@@ -107,8 +107,9 @@ export const CONCEPT_CATALOGUE: Record<ConceptType, ConceptEntry> = {
     names: "what the story is",
     purpose: "A user story introduced along the iterations",
     guidance:
-      "Who wants what, and why it matters to them. Link the flows and roles it " +
-      "touches by id so the record joins up.",
+      "Who wants what, and why it matters to them — the friction it removes for " +
+      "them, not the feature that removes it. Link the flows and roles it touches " +
+      "by id so the record joins up.",
   },
   Role: {
     keys: ["role", "roles"],
@@ -142,7 +143,11 @@ export const CONCEPT_CATALOGUE: Record<ConceptType, ConceptEntry> = {
     purpose: "What the prototype runs under for one review: role, flags, route rules, dataset",
     guidance:
       "The state a reviewer meets: which role, which permissions on top of that " +
-      "role's, which flags and route rules, which dataset, and the flow to walk.",
+      "role's, which flags and route rules, which dataset, and the flow to walk. " +
+      "Give `## Expected outcome` a real answer before the `## Flow` steps: what " +
+      "the person should be able to do by the end, in their words. A flow with no " +
+      "expected outcome is a click-path — it can be walked but not judged, and a " +
+      "review has nothing to measure the walk against.",
   },
   Calendar: {
     keys: ["calendar"],

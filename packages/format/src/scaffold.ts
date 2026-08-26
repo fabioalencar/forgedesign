@@ -31,7 +31,19 @@ is the genesis: the requirements and definitions the work started from.
 
 ## What it is
 
+## The friction it removes
+<!-- The specific friction this removes, for the specific job someone is doing. Not the
+     feature — the thing that is hard today. A review can only ask whether an interface
+     removed the friction the record names, so a brief that names none cannot be reviewed
+     on the vector that matters most. -->
+
 ## Who it's for
+
+## The loop it drives
+<!-- The behaviour this is meant to produce, and how it pays: what someone does, how often,
+     and what that is worth. Named here so a screen's primary action can be checked against
+     it later. At review time this is checkable as alignment with the stated loop, never as
+     an outcome a prototype could measure. -->
 
 ## What it is not
 `,
