@@ -21,6 +21,7 @@ import {
   type CommentsApiConfig,
   fetchUnfetchedComments,
   markCommentsFetched,
+  setSnapshotWindow,
 } from "../comments-client.js";
 import { readUserConfig } from "../config.js";
 import { findFreeze, readFreezes, todayIsoDate } from "../freezes.js";
@@ -106,6 +107,51 @@ export async function archiveTag(options: {
 }): Promise<{ alreadyArchived: boolean }> {
   const { api, snapshotId } = await resolveSnapshot(options.tag, options.cwd);
   return archiveSnapshot(api, snapshotId);
+}
+
+/**
+ * A deadline the creator typed, as an instant (T-387).
+ *
+ * **A bare date means the end of that day where the creator is**, because
+ * "closes 4 September" means the 4th is still a day you can comment on — and
+ * because JavaScript reads a date-only string as UTC midnight, which would
+ * close the round most of a day early for anyone west of Greenwich and is
+ * exactly the silent timezone bug this feature exists to avoid. A date *with* a
+ * time is left to the engine, which reads an unzoned one as local — the same
+ * answer, arrived at the same way.
+ *
+ * A deadline in the past is refused rather than accepted as an immediate close:
+ * it is almost always a typo, and `forge comments archive` is the deliberate way
+ * to end a round now.
+ */
+export function parseWindowDeadline(input: string, now = new Date()): string {
+  const trimmed = input.trim();
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  const at = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]), 23, 59, 59, 999)
+    : new Date(trimmed);
+  if (Number.isNaN(at.getTime())) {
+    throw new Error(`"${input}" is not a date — use YYYY-MM-DD, or a full date and time`);
+  }
+  if (at.getTime() <= now.getTime()) {
+    throw new Error(
+      `${at.toISOString()} is in the past — to end the round now, run \`forge comments archive\``,
+    );
+  }
+  return at.toISOString();
+}
+
+/** Sets, extends or clears the feedback window on a freeze (T-387). */
+export async function setWindow(options: {
+  tag: string;
+  closes: string | null;
+  cwd?: string;
+  now?: Date;
+}): Promise<{ closesAt: string | null }> {
+  const { api, snapshotId } = await resolveSnapshot(options.tag, options.cwd);
+  const closesAt =
+    options.closes === null ? null : parseWindowDeadline(options.closes, options.now);
+  return setSnapshotWindow(api, snapshotId, closesAt);
 }
 
 export interface TriageStageResult {
@@ -358,6 +404,38 @@ export function registerCommentsCommand(program: Command): void {
         result.alreadyArchived
           ? `Snapshot for "${tag}" was already archived.`
           : `Archived "${tag}" — its preview is now read-only.`,
+      );
+    });
+
+  comments
+    .command("window")
+    .argument("<tag>", "freeze tag whose feedback round has a deadline")
+    .option("--closes <date>", "when the round stops taking comments (YYYY-MM-DD, or with a time)")
+    .option("--clear", "remove the deadline and leave the round open-ended")
+    .description("set, extend or clear the feedback window on a freeze")
+    .action(async (tag: string, options: { closes?: string; clear?: boolean }) => {
+      if (options.clear && options.closes) {
+        throw new Error("pass either --closes or --clear, not both");
+      }
+      if (!options.clear && !options.closes) {
+        throw new Error("pass --closes <date> to set a deadline, or --clear to remove one");
+      }
+      const result = await setWindow({
+        tag,
+        closes: options.clear ? null : (options.closes ?? ""),
+      });
+      if (!result.closesAt) {
+        console.log(`Cleared the feedback window on "${tag}" — the round is open-ended again.`);
+        return;
+      }
+      // Echoed in the creator's own zone and in UTC: they typed the first and
+      // their reviewers are shown the second.
+      console.log(
+        `Feedback on "${tag}" closes ${new Date(result.closesAt).toLocaleString()} ` +
+          `(${result.closesAt}).`,
+      );
+      console.log(
+        "Reviewers see the deadline in the review banner. Extend it by running this again.",
       );
     });
 

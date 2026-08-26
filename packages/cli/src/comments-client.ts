@@ -136,6 +136,28 @@ export async function archiveSnapshot(
   return { alreadyArchived: body.alreadyArchived === true };
 }
 
+/**
+ * Sets, extends or clears a round's feedback window (T-387). `null` clears it.
+ *
+ * Extending is this same call with a later instant, deliberately: a deadline
+ * that could only be set once would make a slipped date cost a new freeze, a
+ * new URL, and a re-gated audience.
+ */
+export async function setSnapshotWindow(
+  config: CommentsApiConfig,
+  snapshotId: string,
+  closesAt: string | null,
+): Promise<{ closesAt: string | null }> {
+  const res = await fetch(url(config, `/snapshots/${snapshotId}/window`), {
+    method: "POST",
+    headers: authHeaders(config),
+    body: JSON.stringify({ closesAt }),
+  });
+  await expectOk(res, "feedback window");
+  const body = (await res.json()) as { closesAt?: string | null };
+  return { closesAt: body.closesAt ?? null };
+}
+
 async function countUnfetchedComments(
   config: CommentsApiConfig,
   snapshotId: string,
