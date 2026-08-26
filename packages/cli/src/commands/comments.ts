@@ -43,6 +43,44 @@ function arrivalDate(createdAt: string | undefined, fallback: string): string {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString().slice(0, 10);
 }
 
+/**
+ * Where `forge comments` talks, and which credential it uses (DDR-104, TASK-420).
+ *
+ * **Cloud first, because the direct path was never a customer path.**
+ * `commentsApiKey` is one deployment-wide secret that authorises every tenant's
+ * comments, so a customer could not be given one — which is why every
+ * `forge comments` subcommand used to refuse with an instruction no Cloud creator
+ * could follow. Going through the control plane uses the `cloudToken` they
+ * already have from `forge login`, and the control plane decides ownership,
+ * because it is the only plane that knows who owns what.
+ *
+ * The base URL is the review plane's own paths under `/api/cli`, so nothing in
+ * `comments-client.ts` changes — only where it points and what it presents.
+ *
+ * **The direct config survives as an operator and self-host escape hatch**, which
+ * is exactly what DDR-104 left it as. It is checked second so that a machine
+ * holding both — an operator's, typically — takes the path a customer would,
+ * and any breakage shows up on the path that matters rather than hiding behind
+ * a credential nobody else has.
+ */
+export function commentsApiFor(userConfig: {
+  cloudApiUrl?: string;
+  cloudToken?: string;
+  commentsApiUrl?: string;
+  commentsApiKey?: string;
+}): CommentsApiConfig {
+  if (userConfig.cloudToken) {
+    const origin = (userConfig.cloudApiUrl ?? "https://useforge.design").replace(/\/$/, "");
+    return { apiUrl: `${origin}/api/cli`, apiKey: userConfig.cloudToken };
+  }
+  if (userConfig.commentsApiUrl && userConfig.commentsApiKey) {
+    return { apiUrl: userConfig.commentsApiUrl, apiKey: userConfig.commentsApiKey };
+  }
+  throw new Error(
+    "not signed in — run `forge login`. (Self-hosting? Set commentsApiUrl and commentsApiKey in ~/.forge/config.json.)",
+  );
+}
+
 /** Shared plumbing: repo root, API config, and the tag's registered snapshot. */
 async function resolveSnapshot(
   tag: string,
@@ -50,16 +88,7 @@ async function resolveSnapshot(
 ): Promise<{ root: string; api: CommentsApiConfig; snapshotId: string }> {
   const root = await requireRepoRoot(cwd);
 
-  const userConfig = await readUserConfig();
-  if (!userConfig.commentsApiUrl || !userConfig.commentsApiKey) {
-    throw new Error(
-      "comment API not configured — set commentsApiUrl and commentsApiKey in ~/.forge/config.json",
-    );
-  }
-  const api: CommentsApiConfig = {
-    apiUrl: userConfig.commentsApiUrl,
-    apiKey: userConfig.commentsApiKey,
-  };
+  const api = commentsApiFor(await readUserConfig());
 
   const freeze = findFreeze(await readFreezes(root), tag);
   if (!freeze) throw new Error(`no freeze named "${tag}" in freezes.json`);
