@@ -57,6 +57,12 @@ context. Text that gets in stays in.
    giving a real disposition to each is the actual value of this skill over a raw dump of
    comments into the record.
 
+   A staged comment may carry the session it was written in (`ua_family`, `ua_version`,
+   `os_family`, `pixel_ratio` — parsed facts, never a raw user agent). When a comment
+   reports something broken, that is the reproduction context — "reviewed on safari 17 /
+   ios" — so carry it into the task you create; it is not stored in the record and ages
+   out of the service, so the task is where it survives.
+
 3. **Write the proposal** to `.forge/triage/<tag>/proposal.json`:
    ```json
    {

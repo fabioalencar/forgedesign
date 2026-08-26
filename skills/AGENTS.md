@@ -36,6 +36,14 @@ the user for it.
    non-goals are the part that earns its keep) and `design/glossary/<term>.md`, one file per
    term with `type: Term` frontmatter (terms from the code's own
    vocabulary, one line each), both derived from the repo and confirmed with the user.
+   **Two brief sections are ground truth a later review is judged against, so ask rather
+   than infer** (DDR-108): *the friction it removes* — the specific thing that is hard
+   today, for the job someone is actually doing, not the feature — and *the loop it
+   drives*, the behaviour the interface should produce and how it pays. A repo tells you
+   what was built, never what it was built against, so this is the part you should expect
+   to get wrong from the code alone. If the user has no answer, **leave the section empty**:
+   an empty section is a finding a later review reports, and it is honest; a sentence you
+   invented reads as their intent forever.
 5. Seed `design/questions/QUESTION-###.md`, one file each, with what you genuinely could not answer, as `QUESTION-###`
    entries. Lift undecided design notes and "TODO: decide…" comments — those are questions.
 6. Move a real existing task list into `design/todos.md` with justifiable `opened` dates (a commit
@@ -120,6 +128,11 @@ Use when asked to triage comments for a freeze.
    decision-recording flow above first if one doesn't exist yet; this command never
    fabricates a DDR), `deferred` (worth doing, not now), or `pending` (needs more thought).
    Every staged comment needs an entry — one you omit becomes invisible to the record.
+   A staged comment may carry the session it was written in (`ua_family`, `ua_version`,
+   `os_family`, `pixel_ratio` — parsed facts, never a raw user agent). When a comment
+   reports something broken, that is the reproduction context — carry it into the task you
+   create; it is not stored in the record and ages out of the service, so the task is
+   where it survives.
 3. Write `.forge/triage/<tag>/proposal.json`: `{ "items": [{ "commentId", "disposition",
    "taskId"?, "taskTitle"?, "ddrId"? }] }`.
 4. Run `forge comments triage apply <tag>`. It fails before writing anything if a

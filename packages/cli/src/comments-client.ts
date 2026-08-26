@@ -55,6 +55,17 @@ export interface ApiComment {
   scenario_id?: string | null;
   step_id?: string | null;
   screenshot_url: string | null;
+  /**
+   * The session the comment was written in, parsed rather than raw (T-426):
+   * browser family and major version, OS family, device pixel ratio. Absent
+   * on older comments and after the service's retention window; present only
+   * on the API-key path, which is this client. Reproduction context for
+   * triage — "reviewed on safari 17 / ios" — not part of the record's files.
+   */
+  ua_family?: string | null;
+  ua_version?: string | null;
+  os_family?: string | null;
+  pixel_ratio?: number | null;
   created_at: string;
 }
 

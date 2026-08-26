@@ -49,6 +49,22 @@ the repo can answer.
    copy. The "what it is not" section is the one people skip and the one that earns its
    keep — a non-goal is what stops a stakeholder's suggestion from silently becoming scope.
 
+   **Two of its sections are the ground truth a review is later judged against, so ask for
+   them rather than inferring them** (DDR-108):
+
+   - **The friction it removes** — the specific thing that is hard today, for the specific
+     job someone is doing. Not the feature. A repo tells you what was *built*; only the
+     person can tell you what it was built *against*, so this is the one section you should
+     expect to get wrong from the code alone.
+   - **The loop it drives** — the behaviour the interface should produce, and how it pays.
+
+   These are the record's answers for vectors 1 and 4 of the review rubric, and a review can
+   only ask whether a screen removed the friction the record *names*. Ask once, plainly, and
+   write what they say. **If they do not have an answer, leave the section empty and move
+   on** — an empty section is a finding a later review reports, and it is honest; a sentence
+   you invented reads as the creator's intent forever and is not. Never fill these from the
+   codebase to avoid an awkward silence.
+
 5. **Write the glossary** as `design/glossary/<term-slug>.md`, one file per term, each with
    `type: Term` frontmatter and a `title`. Terms that carry project meaning — the nouns in
    the codebase a newcomer would guess wrong. Pull them from the code's own vocabulary
