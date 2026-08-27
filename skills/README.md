@@ -11,6 +11,7 @@ ends by running `forge doctor`.
 | [`ddr`](ddr/SKILL.md) | A non-obvious choice was made and needs recording |
 | [`intake`](intake/SKILL.md) | Raw context (transcript, meeting note) needs classifying into proposals |
 | [`triage`](triage/SKILL.md) | Stakeholder comments on a freeze need dispositioning |
+| [`review`](review/SKILL.md) | Judging a built prototype against the record, before anyone else sees it |
 | [`freeze`](freeze/SKILL.md) | Cutting a version for review |
 
 [`AGENTS.md`](AGENTS.md) is the same process restated as plain project context for Codex,

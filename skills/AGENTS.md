@@ -1,7 +1,7 @@
 # Forge process — Codex adapter
 
 This file is the Codex-compatible restatement of the Claude Code skills in this directory
-(`skills/forge-init/`, `skills/ddr/`, `skills/intake/`, `skills/triage/`, `skills/freeze/`). Same CLI commands,
+(`skills/forge-init/`, `skills/ddr/`, `skills/intake/`, `skills/triage/`, `skills/review/`, `skills/freeze/`). Same CLI commands,
 same rules, same doctor-last discipline — just read as plain project context instead of an
 invoked skill, since Codex doesn't have a skill-invocation mechanism. If a Claude Code
 skill's instructions change, mirror the change here so the two never drift apart.
@@ -138,6 +138,39 @@ Use when asked to triage comments for a freeze.
 4. Run `forge comments triage apply <tag>`. It fails before writing anything if a
    referenced `taskId`/`ddrId` doesn't exist — fix the proposal and rerun.
 5. Report the counts back (feedback items, new/linked tasks, anything skipped).
+
+## Reviewing a built prototype against the record (review)
+
+Use when asked to review a prototype, run the rubric, or check what was built against what
+the record says it is for.
+
+**Advisory, never blocking, and never a score.** Findings land as `source: scan` feedback
+with `feedback_status: pending`; dispositioning them is the human's act. The rubric produces
+arguable findings, never a grade — the record cannot back that objectivity.
+
+1. **Read the record first** — brief, stories, questions, scenarios, design-system,
+   components, roles, flows. Missing ground truth **is itself a finding**: a brief naming no
+   friction it removes or no loop it drives, a scenario with no Purpose or Expected outcome,
+   tasks with no `genesis:`. These are vector-1 findings and need no screenshots. Report them
+   first — a review of a prototype whose record states no job can only comment on taste.
+2. **Walk the prototype**, using a scenario's `## Flow` steps as the itinerary where there
+   are scenarios. For vector 2 prefer deterministic checks: built CSS against the tokens,
+   rendered components against the inventory, axe-core for WCAG.
+3. **Judge the four vectors against their ground truth** (DDR-108): `utility` (does it remove
+   the friction the record names, for the job the record names), `coherence` (is it built in
+   the system's own language — design-system, components, tokens, DDR-072's contract),
+   `hierarchy` (can a reviewer find the primary action, per route and per step), `viability`
+   (does each primary action serve the loop the brief names). For every finding, be able to
+   name the record's own words it is measured against; if you cannot, it is an opinion.
+4. **Stage** `.forge/review/findings.json`:
+   `{ "findings": [{ "vector", "finding", "title"?, "route"?, "selector"?, "scenario"?, "step"? }] }`.
+   `vector` is one of `utility | coherence | hierarchy | viability`. `step` needs its
+   `scenario`, and a `scenario` id the record does not have is refused.
+5. **Apply**: `forge review apply`. It validates every finding before writing any of them and
+   consumes the staged file, so a rerun cannot file the same review twice.
+6. **Report what you found and what you did not look at** — routes not opened, scenarios not
+   run, vectors answered only from the record. The findings are only as good as this session's
+   model, and a finding you missed is not one the record may claim was checked.
 
 ## Cutting a release (freeze)
 
