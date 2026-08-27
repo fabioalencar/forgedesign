@@ -80,7 +80,9 @@ describe("runFreeze", () => {
 
     const [entry] = await readFreezes(root);
     expect(entry).toMatchObject({ tag: "alpha", previewUrl: null, storybookUrl: null });
-    expect(entry?.pin).toMatch(/^\d{6}$/);
+    // No PIN: it is Cloud's to mint and Cloud's to keep (TASK-447, DDR-115), and
+    // this file is committed.
+    expect(entry?.pin).toBeUndefined();
     expect(entry?.commit).toBe(git("rev-parse", "alpha^{commit}"));
     expect(result.record.tag).toBe("alpha");
 

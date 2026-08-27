@@ -8,7 +8,23 @@ export interface FreezeRecord {
   commit: string;
   previewUrl: string | null;
   storybookUrl: string | null;
-  pin: string;
+  /**
+   * The stakeholder PIN — **legacy, and never written any more** (TASK-447,
+   * DDR-115).
+   *
+   * `forge freeze` used to mint six digits and record them here, which put every
+   * review gate a creator ever cut into a file that is tracked in Git: present in
+   * every clone, fork, contractor checkout and archive, and public the moment the
+   * repository was. A PIN is a property of *hosting*, so Cloud mints it at
+   * publish and shows it to the creator there.
+   *
+   * The field stays optional rather than disappearing because freezes cut before
+   * the change carry a real value, and it is the only copy of a PIN registered
+   * back then — deleting it from a record would lock its own creator out of a
+   * review that is still being served. Nothing reads it to make a decision; it is
+   * kept so a person can find it.
+   */
+  pin?: string;
   /** comment-API snapshot id; null until the snapshot is registered (T-009) */
   snapshotId: string | null;
 }

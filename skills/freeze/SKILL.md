@@ -6,8 +6,9 @@ description: Gather release notes conversationally and run forge freeze to tag, 
 # freeze
 
 Freezes are immutable version snapshots (spec/format.md): an annotated Git tag,
-a prototype + Storybook build, immutable preview URLs, a stakeholder PIN, a handoff pack,
-and a `freezes.json` entry. `forge freeze` does all of that — this skill's job is making
+a prototype + Storybook build, immutable preview URLs, a handoff pack, and a
+`freezes.json` entry. The stakeholder PIN is **not** one of them — it gates hosting, so
+`forge publish` mints it (DDR-115). `forge freeze` does all of that — this skill's job is making
 sure the tag actually tells the story of what changed, not just stamping a version number.
 
 ## Steps
@@ -41,8 +42,13 @@ sure the tag actually tells the story of what changed, not just stamping a versi
    stakeholder to see it, follow with `forge publish <tag>`, which prints the review URL.
 
 6. **Report back** exactly what the command printed: the review URL if you published, the
-   stakeholder PIN, and where the handoff pack landed. Don't paraphrase the URLs — copy
-   them verbatim so the user can hand them off directly.
+   PIN that publish printed with it, and where the handoff pack landed. Don't paraphrase
+   the URLs — copy them verbatim so the user can hand them off directly.
+
+   **Say plainly that the PIN is not saved in the repo.** It is shown once, and after that
+   it lives only in Cloud, at `useforge.design/cloud/prototypes`, where it can also be
+   changed. That is deliberate: it used to be committed to `freezes.json`, which put every
+   review gate into every clone of the repository (DDR-115).
 
    Two things the freeze does quietly that are worth mentioning when they apply:
    - **Scenarios ride along.** Any `SCENARIO-###` in the record is emitted into the build,

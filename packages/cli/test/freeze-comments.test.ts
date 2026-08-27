@@ -88,16 +88,23 @@ describe("freeze no longer registers a snapshot (DDR-104)", () => {
     // authorises every tenant's comments (TASK-420).
     expect(captured).toHaveLength(0);
 
-    // The PIN is still the freeze's, and still recorded: publish hands it to
-    // the control plane, which registers the gate under it.
-    expect(result.record.pin).toMatch(/^\d{6}$/);
+    // And no PIN is minted here either (TASK-447, DDR-115). It used to be, and
+    // it landed in `freezes.json` — a file that is tracked in Git, so every
+    // review gate a creator ever cut went into every clone of their repository
+    // and became public with it. Cloud mints it at publish now.
+    expect(result.record.pin).toBeUndefined();
     expect(result.record.snapshotId).toBeNull();
 
     // identity still minted every freeze (TASK-416), records committed, clean tree
     const forgeJson = JSON.parse(await fs.readFile(path.join(root, "forge.json"), "utf8"));
     expect(forgeJson.projectId).toMatch(/^[0-9a-f-]{36}$/);
     const [entry] = await readFreezes(root);
-    expect(entry?.pin).toBe(result.record.pin);
+    expect(entry?.pin).toBeUndefined();
+    // The property, asserted against the bytes rather than the parse: a PIN must
+    // not be anywhere in the file a creator commits.
+    const raw = await fs.readFile(path.join(root, "freezes.json"), "utf8");
+    expect(raw).not.toMatch(/"pin"/);
+    expect(raw).not.toMatch(/\b\d{6}\b/);
     expect(execFileSync("git", ["status", "--porcelain"], { cwd: root }).toString()).toBe("");
   });
 
@@ -153,7 +160,7 @@ describe("freeze no longer registers a snapshot (DDR-104)", () => {
     const result = await runFreeze({ tag: "alpha", message: "x", cwd: root });
 
     expect(result.warnings.join(" ")).not.toContain("commentsApiUrl");
-    expect(result.record.pin).toMatch(/^\d{6}$/);
+    expect(result.record.pin).toBeUndefined();
     expect(captured).toHaveLength(0);
     const html = await fs.readFile(path.join(root, "prototype/dist/index.html"), "utf8");
     expect(html).not.toContain("forge-overlay-script");

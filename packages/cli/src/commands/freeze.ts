@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Command } from "commander";
@@ -42,10 +41,6 @@ export interface FreezeResult {
   builds: PrototypeBuilds;
   record: FreezeRecord;
   warnings: string[];
-}
-
-export function generatePin(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 /** Hard preconditions checked before the tag is created (spec §2). Throws. */
@@ -134,7 +129,6 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
       config.commentsApiUrl && config.commentsApiKey
         ? { apiUrl: config.commentsApiUrl, apiKey: config.commentsApiKey }
         : null;
-    const pin = generatePin();
     // Null until `forge publish` mints the gate and writes the id back
     // (DDR-104). Freezes cut before that change carry a real id here and the
     // comment commands still read it, which is why the field stays.
@@ -159,9 +153,17 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
     // consequence was that a Cloud creator froze with no snapshot and published
     // with no gate (TASK-419, TASK-420).
     //
-    // The PIN is still generated and printed here. It belongs to the freeze, it
-    // goes into `freezes.json` with it, and publish hands it to the control
-    // plane, which registers the gate under it.
+    // The PIN is not generated here either any more (TASK-447, DDR-115). It used
+    // to be, and it was written into `freezes.json` — a file that is tracked in
+    // Git, so every review gate a creator ever cut travelled with the repository
+    // into every clone, fork and archive, and went public the moment the
+    // repository did. Nothing could read it back out of the service either, so
+    // that committed copy was also the *only* copy.
+    //
+    // A PIN gates *serving*, and serving is Cloud's job (DDR-073). So Cloud mints
+    // it at publish, shows it to the creator once on the way back, and keeps it
+    // on the hosted freeze where they can look it up and change it. A freeze is
+    // the version; the gate belongs to the place that hosts it.
 
     // The scenario runtime bundle rides along with the overlay: both must be in
     // the build before it deploys, because a hosted freeze is exactly where the
@@ -199,7 +201,6 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
       commit: await headCommit(root),
       previewUrl,
       storybookUrl,
-      pin,
       snapshotId,
     };
     log("Writing freezes.json…");
@@ -303,7 +304,6 @@ export function registerFreezeCommand(program: Command): void {
         `  preview:   ${result.record.previewUrl ?? `publish it with \`forge publish ${tag}\``}`,
       );
       console.log(`  storybook: ${result.record.storybookUrl ?? "not deployed"}`);
-      console.log(`  stakeholder PIN: ${result.record.pin}`);
       console.log(`  handoff pack: handoff/${result.record.tag}/`);
       console.log("  release hub: hub/index.html (publish it with your preferred static host)");
       console.log(

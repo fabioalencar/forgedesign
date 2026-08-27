@@ -186,8 +186,11 @@ Use when asked to freeze, cut a release, or tag a version.
 5. Run `forge freeze <tag> --message "<the message from step 2>"`. Freeze produces the
    artifact; it does not host it. To put it in front of a stakeholder, follow with
    `forge publish <tag>`.
-6. Report back the preview/Storybook URLs, stakeholder PIN, and handoff pack location
-   verbatim from the command's output.
+6. Report back the preview/Storybook URLs and handoff pack location verbatim from the
+   command's output. **A freeze has no PIN** — the review gate belongs to hosting, so
+   `forge publish` mints it and prints it once (DDR-115). If you published, copy that PIN
+   verbatim too, and say that it is not stored in the repo: it is looked up and changed at
+   `useforge.design/cloud/prototypes`.
 
 `forge freeze` writes `design/feature-log.md` — what reached Done between the previous tag
 and this one, read from Git rather than from a field. Report it like the other outputs.

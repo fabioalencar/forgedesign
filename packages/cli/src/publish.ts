@@ -126,6 +126,14 @@ export interface PublishResult {
    * Optional so a service that predates the change still parses.
    */
   snapshotId?: string;
+  /**
+   * The six digits a stakeholder types (TASK-447, DDR-115).
+   *
+   * Minted by Cloud now, and shown here once — the CLI never stores it. Optional
+   * because a service that predates the change returns no `pin`, in which case
+   * the digits are the ones the freeze printed and `freezes.json` still has them.
+   */
+  pin?: string;
   freezesUsed: number;
 }
 
@@ -141,8 +149,6 @@ export async function publishBuild(input: {
   projectId: string;
   repoName: string;
   tag: string;
-  /** the six digits `forge freeze` generated; the control plane gates on it (DDR-104) */
-  pin: string;
   /** publish even when the service thinks the build carries a secret (TASK-366) */
   force?: boolean;
 }): Promise<{ ok: true; result: PublishResult } | { ok: false; refusal: PublishRefusal }> {
@@ -172,8 +178,10 @@ export async function publishBuild(input: {
     body: JSON.stringify({
       projectId: input.projectId,
       repoName: input.repoName,
+      // No `pin`: Cloud mints the review gate at publish and hands it back
+      // (DDR-115). Sending one from here is what put every PIN a creator ever cut
+      // into `freezes.json`, and `freezes.json` is tracked in Git.
       tag: input.tag,
-      pin: input.pin,
       force: input.force === true ? true : undefined,
       files,
     }),

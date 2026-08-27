@@ -57,7 +57,6 @@ export function registerPublishCommand(program: Command): void {
         projectId,
         repoName: path.basename(root),
         tag,
-        pin: freeze.pin,
         force: options.force,
       });
 
@@ -74,7 +73,7 @@ export function registerPublishCommand(program: Command): void {
         await setFreezeSnapshotId(root, tag, outcome.result.snapshotId);
       }
 
-      const { url, shortUrl, fileCount, freezesUsed } = outcome.result;
+      const { url, shortUrl, fileCount, freezesUsed, pin } = outcome.result;
       // The short one first: it is the one that gets sent, and DDR-085's whole
       // argument is that a link read over a call or retyped off a phone should
       // be short while the URL that ends up in the address bar stays
@@ -85,7 +84,23 @@ export function registerPublishCommand(program: Command): void {
       console.log(
         `  ${fileCount} file(s) hosted · ${freezesUsed} freeze(s) published on this plan`,
       );
-      console.log("\nSend the first link with the freeze's PIN to invite a review.");
+
+      // Shown here and nowhere else on this machine (TASK-447, DDR-115). It is
+      // deliberately not written to `freezes.json`, which is tracked in Git —
+      // so the sentence has to say where it lives instead, or the next question
+      // is the one that opened this task: where do I find the PIN once this has
+      // scrolled past?
+      if (pin) {
+        console.log(`\n  PIN ${pin}`);
+        console.log("  Send it with the link. It is not saved in this repo — find it again at");
+        console.log("  useforge.design/cloud/prototypes, where you can also change it.");
+      } else {
+        // A service from before the mint moved. The freeze's own PIN is still
+        // what gates it, and that is still in `freezes.json`.
+        console.log(
+          `\nSend the first link with the PIN \`forge freeze ${tag}\` printed to invite a review.`,
+        );
+      }
     });
 
   program
