@@ -54,6 +54,10 @@ jobs:
       - name: Knip (unused files, exports, dependencies)
         run: pnpm knip
 
+      # One version for all three packages (DDR-002).
+      - name: Package versions agree
+        run: pnpm check:versions
+
       # This repository is its own Design Record, so the format's rules apply to
       # it. `--base` compares accepted decisions against the merge target, which
       # is what makes their immutability enforceable in a pull request rather
