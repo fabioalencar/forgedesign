@@ -122,7 +122,10 @@ Use when asked to intake a transcript, meeting note, or other raw context.
 
 Use when asked to triage comments for a freeze.
 
-1. Stage: `forge comments triage <tag>`. If there's nothing to triage, stop.
+1. Stage: `forge comments triage <tag>` for a Forge Cloud review (closed beta, invited
+   accounts only), or `forge comments import figma|issues …` for feedback that lives in a
+   Figma file or a repository's issues, which needs no account. If there's nothing to
+   triage, stop.
 2. For every staged comment, decide a disposition: `accepted` (link an existing task via
    `taskId` — this is how you de-duplicate several comments onto one task — or create one
    with `taskTitle`), `declined` (**requires an existing** `DDR-###` via `ddrId` — run the
@@ -185,8 +188,9 @@ Use when asked to freeze, cut a release, or tag a version.
 4. Make sure the working tree is clean — `forge freeze` refuses otherwise. Commit any
    pending record changes first.
 5. Run `forge freeze <tag> --message "<the message from step 2>"`. Freeze produces the
-   artifact; it does not host it. To put it in front of a stakeholder, follow with
-   `forge publish <tag>`, which sends the build and, beside it, the record concepts whose
+   artifact; it does not host it. The build is static, so any host can serve it. If the user
+   has a Forge Cloud account (closed beta, invited accounts only; `forge whoami` says), put it
+   in front of a stakeholder with `forge publish <tag>`, which sends the build and, beside it, the record concepts whose
    `audience` is stakeholders as they stood at the tag. Nothing owner-only leaves the repo;
    the command prints how many concepts crossed and how many stayed home.
 6. Report back the preview/Storybook URLs and handoff pack location verbatim from the

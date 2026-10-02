@@ -71,13 +71,16 @@ stay consistent without anyone remembering to make them so.
 
 Publishing a frozen version to a URL a stakeholder can open, the PIN gate in front of it,
 and the comment service behind it are a separate commercial service,
-[Forge Cloud](https://useforge.design). `forge login` and `forge publish` are how the CLI
-talks to it; nothing else in this repository needs it.
+[Forge Cloud](https://useforge.design). **It is a closed beta for now, with invited accounts
+only and no open sign-up.** Its commands (`forge login`, `forge publish`) are in the CLI and
+listed apart in `forge --help`; nothing else in this repository needs them.
 
 The line is drawn at **serving, not capability**. Everything that produces a record is here
-and is Apache-2.0. A freeze is a portable directory of static files — you can host one
-yourself and never involve the service at all. What you would be reimplementing is a server,
-not a format.
+and is Apache-2.0, and the whole loop runs without the service: a freeze is a portable
+directory of static files you can host anywhere, and stakeholder feedback comes back into
+the record from a Figma file's comments or a repository's issues (`forge comments import`)
+as well as from a hosted review. What you would be reimplementing is a server, not a
+format.
 
 ## Contributing
 

@@ -36,11 +36,12 @@ context. Text that gets in stays in.
    ```bash
    forge comments triage <tag>
    ```
-   This fetches unfetched comments for the freeze tagged `<tag>` and stages them at
-   `.forge/triage/<tag>/comments.json`. If there's nothing to triage, it says so and stops
-   — nothing further to do.
+   This fetches unfetched comments for the freeze tagged `<tag>` from its Forge Cloud
+   review and stages them at `.forge/triage/<tag>/comments.json`. If there's nothing to
+   triage, it says so and stops — nothing further to do. Forge Cloud is a closed beta for
+   invited accounts; without one, this refuses, and feedback comes in through an import.
 
-   Feedback that lives somewhere else stages the same way (TASK-463):
+   Feedback that lives somewhere else stages the same way, with no account (TASK-463):
    ```bash
    forge comments import figma <export.json | file key | URL> [--freeze <tag>]
    forge comments import issues <export.json | owner/repo> [--freeze <tag>]

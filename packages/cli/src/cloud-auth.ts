@@ -13,6 +13,17 @@ import { readUserConfig, writeUserConfig } from "./config.js";
  */
 export const DEFAULT_CLOUD_API_URL = "https://useforge.design";
 
+/**
+ * Forge Cloud is not open for sign-up yet (DDR-137), and the open-source CLI
+ * must work in full without it. Every Cloud command sits under this heading in
+ * `--help`, and every refusal for want of an account says the same thing, so
+ * nobody is sent to sign up for something they cannot get.
+ */
+export const CLOUD_HELP_GROUP = "Forge Cloud (closed beta, invited accounts only):";
+
+export const NOT_SIGNED_IN =
+  "this needs Forge Cloud, which is in closed beta for invited accounts — run `forge login` if you have one";
+
 export interface DeviceCodeGrant {
   deviceCode: string;
   userCode: string;

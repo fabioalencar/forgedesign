@@ -2,6 +2,7 @@
 // DDR-009. Kept dependency-free: Node's global fetch. Shared with the
 // dashboard via the @forgedesign/cli/comments-client export.
 
+import { NOT_SIGNED_IN } from "./cloud-auth.js";
 import { readUserConfig } from "./config.js";
 import { readFreezes } from "./freezes.js";
 
@@ -44,7 +45,7 @@ export function commentsApiFor(userConfig: {
     return { apiUrl: userConfig.commentsApiUrl, apiKey: userConfig.commentsApiKey };
   }
   throw new Error(
-    "not signed in — run `forge login`. (Self-hosting? Set commentsApiUrl and commentsApiKey in ~/.forge/config.json.)",
+    `${NOT_SIGNED_IN}. Feedback from Figma or GitHub issues needs no account: \`forge comments import\`.`,
   );
 }
 

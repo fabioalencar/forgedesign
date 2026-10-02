@@ -328,7 +328,7 @@ export function registerFreezeCommand(program: Command): void {
       "refuse to tag unless every checker has a report for this commit under design/checks/<tag>/ (see `forge check`)",
     )
     .description(
-      "freeze the current version: annotated tag, prototype + Storybook builds, and a freezes.json entry committed on main; host it for review with `forge publish`",
+      "freeze the current version: annotated tag, prototype + Storybook builds, and a freezes.json entry committed on main; the build is static, so any host can serve it",
     )
     .action(async (tag: string, opts: { message: string; requireCheck?: boolean }) => {
       const result = await runFreeze({
@@ -340,7 +340,7 @@ export function registerFreezeCommand(program: Command): void {
       for (const warning of result.warnings) console.warn(`warning: ${warning}`);
       console.log(`\nFroze ${result.record.tag} at ${result.record.commit.slice(0, 7)}`);
       console.log(
-        `  preview:   ${result.record.previewUrl ?? `publish it with \`forge publish ${tag}\``}`,
+        `  preview:   ${result.record.previewUrl ?? "not hosted — the build is static, so any host can serve it"}`,
       );
       console.log(`  storybook: ${result.record.storybookUrl ?? "not deployed"}`);
       console.log(`  handoff pack: handoff/${result.record.tag}/`);

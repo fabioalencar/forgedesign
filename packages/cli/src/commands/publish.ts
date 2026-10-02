@@ -2,6 +2,7 @@ import path from "node:path";
 import type { Command } from "commander";
 import { prototypeOutputDir } from "../build.js";
 import { bundleRootOf } from "../bundle-index.js";
+import { CLOUD_HELP_GROUP } from "../cloud-auth.js";
 import { readFreezes, setFreezeSnapshotId } from "../freezes.js";
 import { repoRoot } from "../git.js";
 import { readProjectFile } from "../project.js";
@@ -10,6 +11,7 @@ import { collectRecord, publishBuild, withdrawPublished } from "../publish.js";
 export function registerPublishCommand(program: Command): void {
   program
     .command("publish")
+    .helpGroup(CLOUD_HELP_GROUP)
     .argument("<tag>", "the freeze tag to publish")
     .description("host a frozen build on Forge Cloud and get a link for a stakeholder")
     .option(
@@ -134,6 +136,7 @@ export function registerPublishCommand(program: Command): void {
 
   program
     .command("unpublish")
+    .helpGroup(CLOUD_HELP_GROUP)
     .argument("<tag>", "the published freeze to stop serving")
     .description("stop Forge Cloud serving a published freeze")
     .action(async (tag: string) => {

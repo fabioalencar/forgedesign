@@ -15,6 +15,7 @@ import {
 } from "@forgedesign/format";
 import type { Command } from "commander";
 import { writeBundleIndex } from "../bundle-index.js";
+import { CLOUD_HELP_GROUP } from "../cloud-auth.js";
 import {
   type ApiComment,
   archiveSnapshot,
@@ -479,72 +480,6 @@ export async function applyTriage(options: {
 
 export function registerCommentsCommand(program: Command): void {
   const comments = program.command("comments").description("stakeholder comment operations");
-  comments
-    .command("archive")
-    .argument("<tag>", "freeze tag whose snapshot should become read-only")
-    .description("archive a snapshot: pins stay visible on the preview, new comments are refused")
-    .action(async (tag: string) => {
-      const result = await archiveTag({ tag });
-      console.log(
-        result.alreadyArchived
-          ? `Snapshot for "${tag}" was already archived.`
-          : `Archived "${tag}" — its preview is now read-only.`,
-      );
-    });
-
-  comments
-    .command("window")
-    .argument("<tag>", "freeze tag whose feedback round has a deadline")
-    .option("--closes <date>", "when the round stops taking comments (YYYY-MM-DD, or with a time)")
-    .option("--clear", "remove the deadline and leave the round open-ended")
-    .description("set, extend or clear the feedback window on a freeze")
-    .action(async (tag: string, options: { closes?: string; clear?: boolean }) => {
-      if (options.clear && options.closes) {
-        throw new Error("pass either --closes or --clear, not both");
-      }
-      if (!options.clear && !options.closes) {
-        throw new Error("pass --closes <date> to set a deadline, or --clear to remove one");
-      }
-      const result = await setWindow({
-        tag,
-        closes: options.clear ? null : (options.closes ?? ""),
-      });
-      if (!result.closesAt) {
-        console.log(`Cleared the feedback window on "${tag}" — the round is open-ended again.`);
-        return;
-      }
-      // Echoed in the creator's own zone and in UTC: they typed the first and
-      // their reviewers are shown the second.
-      console.log(
-        `Feedback on "${tag}" closes ${new Date(result.closesAt).toLocaleString()} ` +
-          `(${result.closesAt}).`,
-      );
-      console.log(
-        "Reviewers see the deadline in the review banner. Extend it by running this again.",
-      );
-    });
-
-  comments
-    .command("resolve")
-    .argument("<tag>", "the release that ships the addressed work")
-    .description(
-      'tell every earlier snapshot what became of its comments: declined ones carry the DDR, accepted ones whose task is done become "addressed in <tag>"',
-    )
-    .action(async (tag: string) => {
-      const result = await resolveTrail({ tag, log: console.log });
-      for (const warning of result.warnings) console.log(`warning: ${warning}`);
-      if (result.addressed === 0 && result.declined === 0 && result.answered === 0) {
-        console.log("Nothing to resolve — no settled review feedback to project.");
-        return;
-      }
-      console.log(
-        `Resolved ${result.synced} comment(s): ${result.addressed} addressed in ${tag}` +
-          (result.declined > 0 ? `, ${result.declined} declined` : "") +
-          (result.answered > 0 ? `, ${result.answered} question(s) answered` : "") +
-          ". Old share links now show where each one landed.",
-      );
-    });
-
   const importCommand = comments
     .command("import")
     .description(
@@ -620,7 +555,7 @@ export function registerCommentsCommand(program: Command): void {
   triage
     .argument("<tag>", "freeze tag whose comments to triage")
     .description(
-      "stage new comments under .forge/triage/<tag>/ for disposition in your agent session",
+      "stage a Forge Cloud review's new comments under .forge/triage/<tag>/ — `forge comments import` stages feedback from elsewhere without an account",
     )
     .action(async (tag: string) => {
       const result = await stageTriage({ tag, log: console.log });
@@ -648,6 +583,77 @@ export function registerCommentsCommand(program: Command): void {
           (result.questionIds.length > 0 ? `, ${result.questionIds.length} QUESTION(s)` : "") +
           (result.skipped.length > 0 ? `, ${result.skipped.length} skipped` : "") +
           `. Summary at ${result.staged}.`,
+      );
+    });
+
+  // Registered last so `--help` lists the local commands first: commander
+  // orders its groups by the first command in each.
+  comments
+    .command("archive")
+    .helpGroup(CLOUD_HELP_GROUP)
+    .argument("<tag>", "freeze tag whose snapshot should become read-only")
+    .description("archive a snapshot: pins stay visible on the preview, new comments are refused")
+    .action(async (tag: string) => {
+      const result = await archiveTag({ tag });
+      console.log(
+        result.alreadyArchived
+          ? `Snapshot for "${tag}" was already archived.`
+          : `Archived "${tag}" — its preview is now read-only.`,
+      );
+    });
+
+  comments
+    .command("window")
+    .helpGroup(CLOUD_HELP_GROUP)
+    .argument("<tag>", "freeze tag whose feedback round has a deadline")
+    .option("--closes <date>", "when the round stops taking comments (YYYY-MM-DD, or with a time)")
+    .option("--clear", "remove the deadline and leave the round open-ended")
+    .description("set, extend or clear the feedback window on a freeze")
+    .action(async (tag: string, options: { closes?: string; clear?: boolean }) => {
+      if (options.clear && options.closes) {
+        throw new Error("pass either --closes or --clear, not both");
+      }
+      if (!options.clear && !options.closes) {
+        throw new Error("pass --closes <date> to set a deadline, or --clear to remove one");
+      }
+      const result = await setWindow({
+        tag,
+        closes: options.clear ? null : (options.closes ?? ""),
+      });
+      if (!result.closesAt) {
+        console.log(`Cleared the feedback window on "${tag}" — the round is open-ended again.`);
+        return;
+      }
+      // Echoed in the creator's own zone and in UTC: they typed the first and
+      // their reviewers are shown the second.
+      console.log(
+        `Feedback on "${tag}" closes ${new Date(result.closesAt).toLocaleString()} ` +
+          `(${result.closesAt}).`,
+      );
+      console.log(
+        "Reviewers see the deadline in the review banner. Extend it by running this again.",
+      );
+    });
+
+  comments
+    .command("resolve")
+    .helpGroup(CLOUD_HELP_GROUP)
+    .argument("<tag>", "the release that ships the addressed work")
+    .description(
+      'tell every earlier snapshot what became of its comments: declined ones carry the DDR, accepted ones whose task is done become "addressed in <tag>"',
+    )
+    .action(async (tag: string) => {
+      const result = await resolveTrail({ tag, log: console.log });
+      for (const warning of result.warnings) console.log(`warning: ${warning}`);
+      if (result.addressed === 0 && result.declined === 0 && result.answered === 0) {
+        console.log("Nothing to resolve — no settled review feedback to project.");
+        return;
+      }
+      console.log(
+        `Resolved ${result.synced} comment(s): ${result.addressed} addressed in ${tag}` +
+          (result.declined > 0 ? `, ${result.declined} declined` : "") +
+          (result.answered > 0 ? `, ${result.answered} question(s) answered` : "") +
+          ". Old share links now show where each one landed.",
       );
     });
 }

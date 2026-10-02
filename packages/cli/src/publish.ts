@@ -17,7 +17,7 @@ import {
   type ParsedConcept,
   parseConcept,
 } from "@forgedesign/format";
-import { cloudApiUrl } from "./cloud-auth.js";
+import { cloudApiUrl, NOT_SIGNED_IN } from "./cloud-auth.js";
 import { readUserConfig } from "./config.js";
 import { fileAtRef, git } from "./git.js";
 
@@ -259,7 +259,7 @@ export async function publishBuild(input: {
 }): Promise<{ ok: true; result: PublishResult } | { ok: false; refusal: PublishRefusal }> {
   const config = await readUserConfig();
   if (!config.cloudToken) {
-    return { ok: false, refusal: { error: "not signed in — run `forge login`" } };
+    return { ok: false, refusal: { error: NOT_SIGNED_IN } };
   }
   const base = await cloudApiUrl();
   const files = await collectBuild(input.buildDir);
@@ -349,7 +349,7 @@ export async function withdrawPublished(input: {
 }): Promise<{ ok: true; result: WithdrawResult } | { ok: false; refusal: PublishRefusal }> {
   const config = await readUserConfig();
   if (!config.cloudToken) {
-    return { ok: false, refusal: { error: "not signed in — run `forge login`" } };
+    return { ok: false, refusal: { error: NOT_SIGNED_IN } };
   }
   const base = await cloudApiUrl();
 
