@@ -1,4 +1,4 @@
-// `forge ddr apply` — the write side of the `ddr` skill (spec/format.md,
+// `forge ddr apply` — the write side of the `forge-ddr` skill (spec/format.md,
 // decisions/DDR-000-template.md). The skill has the conversation and forms
 // the judgment; this command is the only path from that judgment into
 // decisions/ — mirrors the intake/triage stage-then-apply shape (T-229/230):
@@ -9,8 +9,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
+  AUDIENCES,
+  type Audience,
   DDR_BASE_STATUSES,
   type DdrBaseStatus,
+  DECISION_REACHES,
+  type DecisionReach,
+  isAudience,
+  isDecisionReach,
   nextId,
   scanBundle,
   withFrontmatter,
@@ -36,6 +42,17 @@ export interface StagedDdr {
    * the matching `amended_by`, which is the half that kept going unwritten.
    */
   amends?: string[];
+  /**
+   * How far the decision reaches (TASK-457): `project` is about this product,
+   * `general` would hold on a project with a different client. The skill asks
+   * it once, at staging; a file without it reads as `project`.
+   */
+  reach?: DecisionReach;
+  /**
+   * Who may see it once published (DDR-128). A decision is owner-only unless
+   * the creator says `stakeholders`, because it carries the alternatives it beat.
+   */
+  audience?: Audience;
   decision: string;
   why: string;
   alternativesRejected?: string;
@@ -76,6 +93,24 @@ function readAmends(value: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
+/** `audience` is one of two words or absent — and absent means the creator's. */
+function readAudience(value: unknown): Audience | undefined {
+  if (value === undefined || value === null) return undefined;
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (isAudience(raw)) return raw;
+  throw new Error(`audience must be one of ${AUDIENCES.join(", ")} — got ${JSON.stringify(value)}`);
+}
+
+/** `reach` is one of two words or it is absent — a third word is a typo, not a category. */
+function readReach(value: unknown): DecisionReach | undefined {
+  if (value === undefined || value === null) return undefined;
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (isDecisionReach(raw)) return raw;
+  throw new Error(
+    `reach must be one of ${DECISION_REACHES.join(", ")} — got ${JSON.stringify(value)}`,
+  );
+}
+
 function isDdrBaseStatus(value: string): value is DdrBaseStatus {
   return (DDR_BASE_STATUSES as readonly string[]).includes(value);
 }
@@ -96,6 +131,8 @@ function buildDdrConcept(id: string, staged: StagedDdr, status: string, date: st
       title: staged.title,
       date,
       decision_status: status,
+      ...(staged.reach ? { reach: staged.reach } : {}),
+      ...(staged.audience ? { audience: staged.audience } : {}),
       ...(staged.amends?.length ? { amends: staged.amends } : {}),
       context_source: staged.contextSource,
     },
@@ -104,7 +141,7 @@ function buildDdrConcept(id: string, staged: StagedDdr, status: string, date: st
 }
 
 /**
- * Reads `.forge/ddr/<slug>.json` (written by the `ddr` skill), allocates the
+ * Reads `.forge/ddr/<slug>.json` (written by the `forge-ddr` skill), allocates the
  * next DDR-### id by scanning decisions/, and writes decisions/DDR-###-<slug>.md.
  */
 export async function applyDdr(root: string, slug: string): Promise<ApplyDdrResult> {
@@ -134,6 +171,8 @@ export async function applyDdr(root: string, slug: string): Promise<ApplyDdrResu
     consequences: typeof parsed.consequences === "string" ? parsed.consequences : undefined,
     date: typeof parsed.date === "string" ? parsed.date : undefined,
     amends: readAmends(parsed.amends),
+    reach: readReach(parsed.reach),
+    audience: readAudience(parsed.audience),
   };
   const status = parsed.status?.trim() || "draft";
   if (!isDdrBaseStatus(status)) {

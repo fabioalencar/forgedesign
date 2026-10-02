@@ -69,7 +69,7 @@ describe("context intake", () => {
     ].join(" ");
     const staged = await stageIntake({ cwd: root, sourceName: "meetily-export.vtt", source });
     expect(staged.warnings).toEqual([]);
-    // Simulates the intake skill writing proposal.json after classifying the
+    // Simulates the forge-intake skill writing proposal.json after classifying the
     // source in the designer's agent session — no model dispatch from the CLI.
     await fs.writeFile(
       path.join(root, ".forge", "intake", staged.id, "proposal.json"),

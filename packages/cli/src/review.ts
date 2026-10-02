@@ -1,4 +1,4 @@
-// `forge review apply` — the write side of the `review` skill (DDR-108,
+// `forge review apply` — the write side of the `forge-review` skill (DDR-108,
 // DDR-112).
 //
 // The skill runs the four-vector rubric in the user's own agent session: it
@@ -137,7 +137,7 @@ export function validateFindings(
 }
 
 /**
- * Reads `.forge/review/findings.json` (written by the `review` skill),
+ * Reads `.forge/review/findings.json` (written by the `forge-review` skill),
  * allocates a `FEEDBACK-###` per finding, and writes the concepts.
  *
  * The staged file is removed on success. Applying twice would file every
@@ -151,7 +151,7 @@ export async function applyReview(root: string): Promise<ApplyReviewResult> {
     raw = await fs.readFile(stagedFile, "utf8");
   } catch {
     throw new Error(
-      "no staged review found at .forge/review/findings.json — run the review skill first, then rerun `forge review apply`.",
+      "no staged review found at .forge/review/findings.json — run the forge-review skill first, then rerun `forge review apply`.",
     );
   }
 

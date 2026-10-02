@@ -8,8 +8,15 @@
 // CLI, the renderer, and the skills cannot disagree about what the format says.
 
 import {
+  AUDIENCES,
+  type Audience,
   DDR_BASE_STATUSES,
+  DECISION_REACHES,
+  DEFAULT_DECISION_REACH,
+  type DecisionReach,
   FEEDBACK_STATUSES,
+  isAudience,
+  isDecisionReach,
   OKF_STATUSES,
   type OkfStatus,
   QUESTION_STATUSES,
@@ -35,6 +42,8 @@ export const CONCEPT_TYPES = [
   "Term",
   "Flow",
   "Scenario",
+  "Check",
+  "Page Manifest",
 ] as const;
 
 export type ConceptType = (typeof CONCEPT_TYPES)[number];
@@ -79,6 +88,46 @@ export const TYPE_DIRECTORIES: Partial<Record<ConceptType, string>> = {
   Term: "glossary",
   Flow: "flows",
   Scenario: "scenarios",
+  Check: "checks",
+};
+
+/**
+ * Types whose directory holds one level of subdirectories — a check report
+ * sits at `checks/<tag>/<checker>.md`, since a freeze can carry several
+ * checkers and the tag is what groups them (DDR-127).
+ */
+const NESTED_TYPE_DIRECTORIES: ReadonlySet<ConceptType> = new Set(["Check"]);
+
+/**
+ * Who may see each type when nothing on the file says (spec §3, DDR-128).
+ * What the product is for — the brief, its flows, the words it uses — is the
+ * stakeholder's to read; what the creator runs it with — the ledger, the
+ * people, the feedback, the reasoning behind decisions, the reports — stays
+ * with the creator until a file says otherwise. A decision is owner-only
+ * because it carries the alternatives it beat, which may be a client's
+ * business (the creator's call, QUESTION-009).
+ */
+export const DEFAULT_AUDIENCES: Record<ConceptType, Audience> = {
+  Brief: "stakeholders",
+  "Task Ledger": "owner",
+  Calendar: "stakeholders",
+  "Data Model": "stakeholders",
+  "Design System": "stakeholders",
+  "Component Inventory": "stakeholders",
+  "Feature Log": "owner",
+  Decision: "owner",
+  Feedback: "owner",
+  Question: "stakeholders",
+  Story: "stakeholders",
+  Role: "stakeholders",
+  Stakeholder: "owner",
+  Term: "stakeholders",
+  Flow: "stakeholders",
+  Scenario: "stakeholders",
+  Check: "owner",
+  // Which screens exist and what each is for — the same audience as the flows
+  // that cross them (DDR-130).
+  "Page Manifest": "stakeholders",
 };
 
 /** Bundle-root files and the type each must declare (spec §2). */
@@ -90,6 +139,7 @@ export const ROOT_CONCEPT_FILES: Record<string, ConceptType> = {
   "design-system.md": "Design System",
   "components.md": "Component Inventory",
   "feature-log.md": "Feature Log",
+  "pages.md": "Page Manifest",
 };
 
 export interface ConceptSource {
@@ -114,7 +164,9 @@ export type ConceptProblemKind =
   | "id-malformed"
   | "id-filename-mismatch"
   | "status-invalid"
-  | "domain-status-invalid";
+  | "domain-status-invalid"
+  | "reach-invalid"
+  | "audience-invalid";
 
 export interface ConceptProblem {
   kind: ConceptProblemKind;
@@ -185,6 +237,8 @@ export function parseConcept(relPath: string, text: string): ParsedConcept {
 
   const status = readStatus(data.status, problems);
   const domainStatus = readDomainStatus(type, data, problems);
+  checkReach(type, data, problems);
+  checkAudience(data, problems);
 
   return {
     relPath,
@@ -212,6 +266,17 @@ export function isDerived(concept: ParsedConcept): boolean {
   return concept.generated !== null;
 }
 
+/**
+ * How far a decision reaches (spec §5, TASK-457). The field is optional and a
+ * reader treats absence as `project`, so the 100-odd decisions written before
+ * the field existed keep meaning what they meant. Only a decision carries it;
+ * the value is checked in `parseConcept` so doctor and every reader agree.
+ */
+export function decisionReach(concept: ParsedConcept): DecisionReach {
+  const raw = readString(concept.frontmatter.reach);
+  return raw !== null && isDecisionReach(raw) ? raw : DEFAULT_DECISION_REACH;
+}
+
 /** OKF trust tiers (§5.3): a `human:` verifier outranks a machine one. */
 export function trustTier(
   concept: ParsedConcept,
@@ -227,10 +292,12 @@ function checkDirectory(relPath: string, type: ConceptType, problems: ConceptPro
   const expectedDir = TYPE_DIRECTORIES[type];
 
   if (expectedDir !== undefined) {
-    if (dir !== expectedDir) {
+    const nested = NESTED_TYPE_DIRECTORIES.has(type);
+    const matches = nested ? new RegExp(`^${expectedDir}/[^/]+$`).test(dir) : dir === expectedDir;
+    if (!matches) {
       problems.push({
         kind: "type-mismatched-directory",
-        message: `\`type: ${type}\` belongs in ${expectedDir}/, not ${dir === "" ? "the bundle root" : `${dir}/`}`,
+        message: `\`type: ${type}\` belongs in ${expectedDir}/${nested ? "<tag>/" : ""}, not ${dir === "" ? "the bundle root" : `${dir}/`}`,
       });
     }
     return;
@@ -316,6 +383,47 @@ function readDomainStatus(
     });
   }
   return { field: spec.field, value: raw };
+}
+
+/**
+ * `reach` is a decision's field and an enum; a value outside it is a typo the
+ * author meant as one of the two, not a third category. Absence is not a
+ * problem — it is the default.
+ */
+/**
+ * Who may see a concept (spec §3, DDR-128): the file's own word when it has
+ * one, else the type's default, else — for a type the profile does not know —
+ * the creator only, which is the answer that leaks nothing.
+ */
+export function audienceOf(concept: ParsedConcept): Audience {
+  const raw = readString(concept.frontmatter.audience);
+  if (raw !== null && isAudience(raw)) return raw;
+  return concept.type && isConceptType(concept.type) ? DEFAULT_AUDIENCES[concept.type] : "owner";
+}
+
+/** `audience` is one of two words or absent; a third word is a typo, not a third audience. */
+function checkAudience(data: Record<string, unknown>, problems: ConceptProblem[]): void {
+  if (data.audience === undefined || data.audience === null) return;
+  const raw = readString(data.audience);
+  if (raw !== null && isAudience(raw)) return;
+  problems.push({
+    kind: "audience-invalid",
+    message: `\`audience: ${String(data.audience)}\` is not one of ${AUDIENCES.join(" | ")}`,
+  });
+}
+
+function checkReach(
+  type: string | null,
+  data: Record<string, unknown>,
+  problems: ConceptProblem[],
+): void {
+  if (type !== "Decision" || data.reach === undefined || data.reach === null) return;
+  const raw = readString(data.reach);
+  if (raw !== null && isDecisionReach(raw)) return;
+  problems.push({
+    kind: "reach-invalid",
+    message: `\`reach: ${String(data.reach)}\` is not one of ${DECISION_REACHES.join(" | ")}`,
+  });
 }
 
 function readSources(value: unknown): ConceptSource[] {

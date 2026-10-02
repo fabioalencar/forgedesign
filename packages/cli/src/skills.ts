@@ -4,6 +4,10 @@
 // Skills ship inside this package rather than through a marketplace so a
 // skill's instructions and the CLI commands they call can never be different
 // versions. Installing is therefore a copy, not a download.
+//
+// Every skill is named `forge-*` (DDR-136): an agent's skills directory is
+// shared with every other tool the designer runs, and `freeze`, `review` and
+// `triage` were already taken there by other suites.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -23,7 +27,12 @@ export interface InstallResult {
   files: Array<{ relPath: string; outcome: FileOutcome }>;
   /** paths left alone because something not ours is already there */
   conflicts: string[];
+  /** our own installs under a name the skills no longer use, swept */
+  removed: string[];
 }
+
+/** The names the skills carried before they were namespaced (DDR-136). */
+export const LEGACY_SKILL_NAMES = ["ddr", "freeze", "intake", "review", "triage"];
 
 /** The skills, as `<name>/SKILL.md` — README and the Codex adapter are not skills. */
 export function skillFiles(): Record<string, string> {
@@ -58,6 +67,7 @@ async function readIfExists(absPath: string): Promise<string | null> {
 export async function installSkills(repoRoot: string): Promise<InstallResult> {
   const files: InstallResult["files"] = [];
   const conflicts: string[] = [];
+  const removed: string[] = [];
 
   for (const [relPath, body] of Object.entries(skillFiles())) {
     const target = path.join(".claude", "skills", relPath);
@@ -80,7 +90,158 @@ export async function installSkills(repoRoot: string): Promise<InstallResult> {
     files.push({ relPath: target, outcome: existing === null ? "written" : "updated" });
   }
 
-  return { files, conflicts };
+  // A rename would otherwise leave every earlier install beside its successor,
+  // two skills answering one request. Only a file carrying our marker goes: a
+  // `triage` the user wrote is theirs under any name.
+  for (const name of LEGACY_SKILL_NAMES) {
+    const target = path.join(".claude", "skills", name, "SKILL.md");
+    const abs = path.join(repoRoot, target);
+    const existing = await readIfExists(abs);
+    if (existing === null || !existing.includes(SKILL_MARKER)) continue;
+    await fs.rm(abs);
+    await fs.rmdir(path.dirname(abs)).catch(() => {});
+    removed.push(target);
+  }
+
+  return { files, conflicts, removed };
+}
+
+export type LinkOutcome = "linked" | "relinked" | "kept";
+
+export interface HomeInstallResult {
+  /** where the skills were written for the links to point at; null with `source` */
+  store: string | null;
+  links: Array<{ path: string; target: string; outcome: LinkOutcome }>;
+  /** entries left alone because something not ours is already there */
+  conflicts: string[];
+  /** links to a skill under its pre-namespace name that no longer resolve, swept */
+  removed: string[];
+}
+
+export interface HomeInstallOptions {
+  /** the user's home directory — the agents' skills directories are found under it */
+  home: string;
+  /** `~/.forge`, where the skills are written when no `source` is given */
+  forgeHome: string;
+  /** a checkout's `skills/` to link to directly, so edits there are live */
+  source?: string;
+}
+
+/** The directories agents read skills from: Claude Code's, and the open Agent Skills one Codex reads. */
+export function agentSkillDirs(home: string): string[] {
+  return [path.join(home, ".claude", "skills"), path.join(home, ".agents", "skills")];
+}
+
+async function lstatIfExists(absPath: string) {
+  try {
+    return await fs.lstat(absPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+/**
+ * Installs the skills for every project at once, into the directories each
+ * agent reads (DDR-136).
+ *
+ * Each agent gets a symlink, never a copy: two copies of one skill are two
+ * versions of it the moment either is edited, and nothing tells you which one
+ * an agent read. The links point at one place — the skills this CLI ships,
+ * written once under `~/.forge/skills/`, or a checkout's `skills/` when
+ * `source` is given, for someone editing them.
+ *
+ * What it replaces is narrow. A symlink is only a pointer, so repointing one
+ * loses nothing. A directory is replaced only when it holds nothing but a
+ * SKILL.md this command wrote; anything else is a conflict, named and kept,
+ * the same line {@link installSkills} holds in a project.
+ */
+export async function installHomeSkills(options: HomeInstallOptions): Promise<HomeInstallResult> {
+  const names = Object.keys(skillFiles()).map((relPath) => relPath.replace("/SKILL.md", ""));
+  let store: string | null = null;
+  let targetOf: (name: string) => string;
+
+  if (options.source) {
+    const source = path.resolve(options.source);
+    for (const name of names) {
+      if ((await readIfExists(path.join(source, name, "SKILL.md"))) === null) {
+        throw new Error(
+          `${source} has no ${name}/SKILL.md — point --source at a Forge checkout's skills/`,
+        );
+      }
+    }
+    targetOf = (name) => path.join(source, name);
+  } else {
+    store = path.join(options.forgeHome, "skills");
+    for (const [relPath, body] of Object.entries(skillFiles())) {
+      const abs = path.join(store, relPath);
+      const next = withMarker(body);
+      if ((await readIfExists(abs)) === next) continue;
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+      await fs.writeFile(abs, next, "utf8");
+    }
+    const root = store;
+    targetOf = (name) => path.join(root, name);
+  }
+
+  const links: HomeInstallResult["links"] = [];
+  const conflicts: string[] = [];
+  const removed: string[] = [];
+
+  for (const dir of agentSkillDirs(options.home)) {
+    await fs.mkdir(dir, { recursive: true });
+
+    for (const name of names) {
+      const entry = path.join(dir, name);
+      const target = targetOf(name);
+      const stat = await lstatIfExists(entry);
+
+      if (stat === null) {
+        await fs.symlink(target, entry, "dir");
+        links.push({ path: entry, target, outcome: "linked" });
+        continue;
+      }
+      if (stat.isSymbolicLink()) {
+        if (path.resolve(dir, await fs.readlink(entry)) === target) {
+          links.push({ path: entry, target, outcome: "kept" });
+          continue;
+        }
+        await fs.unlink(entry);
+        await fs.symlink(target, entry, "dir");
+        links.push({ path: entry, target, outcome: "relinked" });
+        continue;
+      }
+      if (stat.isDirectory() && (await isOurCopy(entry))) {
+        await fs.rm(entry, { recursive: true });
+        await fs.symlink(target, entry, "dir");
+        links.push({ path: entry, target, outcome: "relinked" });
+        continue;
+      }
+      conflicts.push(entry);
+    }
+
+    // A link made to a skill's old directory dangles once the source is
+    // renamed. Only those go: a live `triage` link is another suite's skill.
+    for (const name of LEGACY_SKILL_NAMES) {
+      const entry = path.join(dir, name);
+      const stat = await lstatIfExists(entry);
+      if (!stat?.isSymbolicLink()) continue;
+      const pointsAt = path.resolve(dir, await fs.readlink(entry));
+      if (path.basename(path.dirname(pointsAt)) !== "skills" || path.basename(pointsAt) !== name)
+        continue;
+      if ((await lstatIfExists(pointsAt)) !== null) continue;
+      await fs.unlink(entry);
+      removed.push(entry);
+    }
+  }
+
+  return { store, links, conflicts, removed };
+}
+
+async function isOurCopy(dir: string): Promise<boolean> {
+  const entries = await fs.readdir(dir);
+  if (entries.length !== 1 || entries[0] !== "SKILL.md") return false;
+  return (await readIfExists(path.join(dir, "SKILL.md")))?.includes(SKILL_MARKER) ?? false;
 }
 
 export interface AgentsResult {

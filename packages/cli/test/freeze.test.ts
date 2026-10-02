@@ -85,6 +85,9 @@ describe("runFreeze", () => {
     expect(entry?.pin).toBeUndefined();
     expect(entry?.commit).toBe(git("rev-parse", "alpha^{commit}"));
     expect(result.record.tag).toBe("alpha");
+    // Every built route's content hash rides on the freeze (TASK-461), so a
+    // later freeze can say which screens changed without rebuilding this one.
+    expect(entry?.routes).toEqual({ "/": expect.stringMatching(/^sha256:[0-9a-f]{64}$/) });
 
     await expect(fs.access(path.join(root, "prototype/dist/index.html"))).resolves.toBeUndefined();
     await expect(

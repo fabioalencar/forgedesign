@@ -15,14 +15,17 @@ import {
 } from "@forgedesign/format";
 import type { Command } from "commander";
 import { writeBundleIndex } from "../bundle-index.js";
+import { CLOUD_HELP_GROUP } from "../cloud-auth.js";
 import {
   type ApiComment,
   archiveSnapshot,
   type CommentsApiConfig,
+  commentsApiFor,
   fetchUnfetchedComments,
   markCommentsFetched,
   setSnapshotWindow,
 } from "../comments-client.js";
+import { type ImportSource, readImportedBatch, stageImport } from "../comments-import.js";
 import { readUserConfig } from "../config.js";
 import { findFreeze, readFreezes, todayIsoDate } from "../freezes.js";
 import { requireRepoRoot } from "../git.js";
@@ -42,44 +45,6 @@ function arrivalDate(createdAt: string | undefined, fallback: string): string {
   if (!createdAt) return fallback;
   const parsed = new Date(createdAt);
   return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString().slice(0, 10);
-}
-
-/**
- * Where `forge comments` talks, and which credential it uses (DDR-104, TASK-420).
- *
- * **Cloud first, because the direct path was never a customer path.**
- * `commentsApiKey` is one deployment-wide secret that authorises every tenant's
- * comments, so a customer could not be given one — which is why every
- * `forge comments` subcommand used to refuse with an instruction no Cloud creator
- * could follow. Going through the control plane uses the `cloudToken` they
- * already have from `forge login`, and the control plane decides ownership,
- * because it is the only plane that knows who owns what.
- *
- * The base URL is the review plane's own paths under `/api/cli`, so nothing in
- * `comments-client.ts` changes — only where it points and what it presents.
- *
- * **The direct config survives as an operator and self-host escape hatch**, which
- * is exactly what DDR-104 left it as. It is checked second so that a machine
- * holding both — an operator's, typically — takes the path a customer would,
- * and any breakage shows up on the path that matters rather than hiding behind
- * a credential nobody else has.
- */
-export function commentsApiFor(userConfig: {
-  cloudApiUrl?: string;
-  cloudToken?: string;
-  commentsApiUrl?: string;
-  commentsApiKey?: string;
-}): CommentsApiConfig {
-  if (userConfig.cloudToken) {
-    const origin = (userConfig.cloudApiUrl ?? "https://useforge.design").replace(/\/$/, "");
-    return { apiUrl: `${origin}/api/cli`, apiKey: userConfig.cloudToken };
-  }
-  if (userConfig.commentsApiUrl && userConfig.commentsApiKey) {
-    return { apiUrl: userConfig.commentsApiUrl, apiKey: userConfig.commentsApiKey };
-  }
-  throw new Error(
-    "not signed in — run `forge login`. (Self-hosting? Set commentsApiUrl and commentsApiKey in ~/.forge/config.json.)",
-  );
 }
 
 /** Shared plumbing: repo root, API config, and the tag's registered snapshot. */
@@ -169,7 +134,7 @@ const triageSummaryPath = (root: string, tag: string) =>
 
 /**
  * Fetches new comments for `tag` and stages them under .forge/triage/<tag>/
- * for the designer's own agent session (the `triage` skill) to group and
+ * for the designer's own agent session (the `forge-triage` skill) to group and
  * de-duplicate. No model call — the CLI only fetches and stages.
  */
 export async function stageTriage(options: {
@@ -186,28 +151,51 @@ export async function stageTriage(options: {
   const stagedAbs = triageCommentsPath(root, options.tag);
   await fs.mkdir(path.dirname(stagedAbs), { recursive: true });
   await fs.writeFile(stagedAbs, `${JSON.stringify(comments, null, 2)}\n`, "utf8");
-  log(`Staged ${comments.length} comment(s) for triage.`);
+  const questions = comments.filter((comment) => comment.kind === "question").length;
+  log(
+    `Staged ${comments.length} comment(s)${questions > 0 ? ` — ${questions} of them question(s)` : ""} for triage.`,
+  );
   return {
     staged: path.join(".forge", "triage", options.tag, "comments.json"),
     count: comments.length,
   };
 }
 
+/** What a comment can become: feedback with one of the record's five states. */
+const FEEDBACK_DISPOSITIONS = ["accepted", "declined", "deferred", "pending"] as const;
+/**
+ * What a question can become (TASK-462): answered by something already in the
+ * record, left open as a Question of its own, or declined with the decision
+ * that declines it. There is no `pending` for a question — `open` is that.
+ */
+const QUESTION_DISPOSITIONS = ["answered", "open", "declined"] as const;
+
+type FeedbackDisposition = (typeof FEEDBACK_DISPOSITIONS)[number];
+type QuestionDisposition = (typeof QUESTION_DISPOSITIONS)[number];
+
 export interface TriageItemInput {
   commentId: string;
-  disposition: "accepted" | "declined" | "deferred" | "pending";
+  disposition: FeedbackDisposition | QuestionDisposition;
   /** link to an existing TASK-###, instead of creating one (accepted only) */
   taskId?: string;
   /** required for a fresh "accepted" item when taskId isn't given */
   taskTitle?: string;
   /** required for "declined" — must already exist in decisions/ */
   ddrId?: string;
+  /** required for a question dispositioned "answered": the DDR, FEEDBACK, TASK or QUESTION that answers it */
+  answerId?: string;
 }
 
 function isDisposition(value: unknown): value is TriageItemInput["disposition"] {
-  return (
-    value === "accepted" || value === "declined" || value === "deferred" || value === "pending"
-  );
+  return isFeedbackDisposition(value) || isQuestionDisposition(value);
+}
+
+function isFeedbackDisposition(value: unknown): value is FeedbackDisposition {
+  return (FEEDBACK_DISPOSITIONS as readonly unknown[]).includes(value);
+}
+
+function isQuestionDisposition(value: unknown): value is QuestionDisposition {
+  return (QUESTION_DISPOSITIONS as readonly unknown[]).includes(value);
 }
 
 const EMPTY_TODOS: LedgerDocument = {
@@ -222,13 +210,15 @@ export interface TriageApplyResult {
   count: number;
   feedbackIds: string[];
   taskIds: string[];
+  /** QUESTION-### concepts written from the batch's questions (TASK-462) */
+  questionIds: string[];
   /** comment ids the proposal didn't disposition — not written anywhere */
   skipped: string[];
 }
 
 /**
  * Writes every staged comment into the bundle's feedback/ with the disposition the
- * designer's agent session (the `triage` skill) decided — accepted → a new
+ * designer's agent session (the `forge-triage` skill) decided — accepted → a new
  * or existing TASK-###, declined → an existing DDR-###, deferred/pending →
  * no link (spec/format.md §4) — then marks the batch fetched. A comment the
  * proposal doesn't mention is skipped, not silently dropped.
@@ -239,7 +229,12 @@ export async function applyTriage(options: {
   log?: (line: string) => void;
 }): Promise<TriageApplyResult> {
   const log = options.log ?? (() => {});
-  const { root, api, snapshotId } = await resolveSnapshot(options.tag, options.cwd);
+  const root = await requireRepoRoot(options.cwd);
+  // An imported batch (TASK-463) has no snapshot and no service to mark
+  // fetched; its manifest says where it came from, and that is the feedback's
+  // `source`. A Cloud batch is the tag's registered snapshot, as before.
+  const imported = await readImportedBatch(root, options.tag);
+  const cloud = imported === null ? await resolveSnapshot(options.tag, options.cwd) : null;
 
   let comments: ApiComment[];
   try {
@@ -247,7 +242,7 @@ export async function applyTriage(options: {
   } catch {
     throw new Error(
       `no staged comments found at .forge/triage/${options.tag}/comments.json — run ` +
-        `\`forge comments triage ${options.tag}\` first.`,
+        `\`forge comments triage ${options.tag}\` (or \`forge comments import …\`) first.`,
     );
   }
 
@@ -268,9 +263,17 @@ export async function applyTriage(options: {
   const items = rawItems as Partial<TriageItemInput>[];
 
   const freezes = await readFreezes(root).catch(() => []);
-  const freezeIndex = freezes.findIndex((f) => f.tag === options.tag);
+  // An imported batch names the freeze it was about only if the creator said
+  // so; a Cloud batch *is* a freeze's.
+  const freezeTag = imported ? imported.freeze : options.tag;
+  const freezeIndex = freezes.findIndex((f) => f.tag === freezeTag);
   const freezeId =
     freezeIndex >= 0 ? `FREEZE-${String(freezeIndex + 1).padStart(3, "0")}` : undefined;
+  if (imported?.freeze && freezeId === undefined) {
+    throw new Error(
+      `batch ${options.tag} says it was about freeze "${imported.freeze}", which is not in freezes.json`,
+    );
+  }
 
   const target = await openTriageTarget(root);
   const { todosDoc, decisionIds } = target;
@@ -278,7 +281,12 @@ export async function applyTriage(options: {
   const today = todayIsoDate();
   const feedbackIds: string[] = [];
   const taskIds: string[] = [];
+  const questionIds: string[] = [];
   const skipped: string[] = [];
+  // Every item is validated before any concept is written: a bad id in the
+  // last item must not leave the first three on disk with the ledger unsaved.
+  // The skill has promised that all along; the loop used to write as it went.
+  const writes: Array<() => Promise<void>> = [];
 
   for (const comment of comments) {
     const item = items.find((candidate) => candidate.commentId === comment.id);
@@ -288,6 +296,72 @@ export async function applyTriage(options: {
         `skipped comment ${comment.id} (${comment.author_label}) — no disposition in proposal.json`,
       );
       continue;
+    }
+
+    // A question becomes a Question concept, never feedback (TASK-462): it
+    // asked to be answered, not acted on, and the two have different states.
+    // The kind comes from the service; a proposal cannot reclassify it.
+    if (comment.kind === "question") {
+      const disposition = item.disposition;
+      if (!isQuestionDisposition(disposition)) {
+        throw new Error(
+          `comment ${comment.id} is a question — disposition it "answered" (with answerId), "open", or "declined" (with ddrId), not "${disposition}"`,
+        );
+      }
+      let status: "open" | "resolved" | "dropped" = "open";
+      let link: string | undefined;
+      if (disposition === "answered") {
+        if (!item.answerId) {
+          throw new Error(
+            `comment ${comment.id}: "answered" needs answerId — the DDR, FEEDBACK, TASK or QUESTION in the record that answers it`,
+          );
+        }
+        const known = item.answerId.startsWith("TASK-")
+          ? Boolean(findTask(todosDoc, item.answerId))
+          : target.conceptIds.has(item.answerId);
+        if (!known) {
+          throw new Error(
+            `comment ${comment.id}: proposal references ${item.answerId}, which is not in the record`,
+          );
+        }
+        status = "resolved";
+        link = item.answerId;
+      } else if (disposition === "declined") {
+        if (!item.ddrId)
+          throw new Error(`comment ${comment.id}: "declined" disposition needs ddrId`);
+        if (!decisionIds.has(item.ddrId)) {
+          throw new Error(
+            `comment ${comment.id}: proposal references ${item.ddrId}, which doesn't exist in decisions/`,
+          );
+        }
+        status = "dropped";
+        link = item.ddrId;
+      }
+      const questionId = target.nextQuestionId();
+      const resolution = link;
+      writes.push(() =>
+        target.writeQuestion({
+          id: questionId,
+          date: arrivalDate(comment.created_at, today),
+          sourceDetail: freezeId,
+          from: comment.author_label,
+          quote: comment.body,
+          status,
+          link: resolution,
+          commentId: comment.id,
+          scenarioId: comment.scenario_id ?? undefined,
+          stepId: comment.step_id ?? undefined,
+          route: comment.route ?? undefined,
+          selector: comment.selector ?? undefined,
+        }),
+      );
+      questionIds.push(questionId);
+      continue;
+    }
+    if (!isFeedbackDisposition(item.disposition)) {
+      throw new Error(
+        `comment ${comment.id} is a comment — disposition it accepted, declined, deferred or pending, not "${item.disposition}" (that is a question's disposition)`,
+      );
     }
 
     const feedbackId = target.nextFeedbackId();
@@ -330,25 +404,33 @@ export async function applyTriage(options: {
       link = item.ddrId;
     }
 
-    await target.writeFeedback({
-      id: feedbackId,
-      // When the feedback arrived, not when we got around to filing it (T-258).
-      date: arrivalDate(comment.created_at, today),
-      source: "review",
-      sourceDetail: freezeId,
-      from: comment.author_label,
-      quote: comment.body,
-      status: item.disposition,
-      link,
-      commentId: comment.id,
-      scenarioId: comment.scenario_id ?? undefined,
-      stepId: comment.step_id ?? undefined,
-      route: comment.route ?? undefined,
-      selector: comment.selector ?? undefined,
-    });
+    const disposition = item.disposition;
+    const resolution = link;
+    writes.push(() =>
+      target.writeFeedback({
+        id: feedbackId,
+        // When the feedback arrived, not when we got around to filing it (T-258).
+        date: arrivalDate(comment.created_at, today),
+        source: imported?.source ?? "review",
+        sourceDetail: freezeId,
+        from: comment.author_label,
+        quote: comment.body,
+        status: disposition,
+        link: resolution,
+        // The service id is the link back for the trail; an import's link
+        // back is the URL where the comment lives.
+        commentId: imported ? undefined : comment.id,
+        url: comment.url ?? undefined,
+        scenarioId: comment.scenario_id ?? undefined,
+        stepId: comment.step_id ?? undefined,
+        route: comment.route ?? undefined,
+        selector: comment.selector ?? undefined,
+      }),
+    );
     feedbackIds.push(feedbackId);
   }
 
+  for (const write of writes) await write();
   await target.save();
   await writeBundleIndex(root);
 
@@ -361,6 +443,7 @@ export async function applyTriage(options: {
       "",
       `${feedbackIds.length} feedback item(s): ${feedbackIds.join(", ") || "none"}`,
       `${taskIds.length} new/linked task(s): ${taskIds.join(", ") || "none"}`,
+      questionIds.length > 0 ? `${questionIds.length} question(s): ${questionIds.join(", ")}` : "",
       skipped.length > 0
         ? `${skipped.length} comment(s) skipped (no disposition): ${skipped.join(", ")}`
         : "",
@@ -370,17 +453,19 @@ export async function applyTriage(options: {
     "utf8",
   );
 
-  log("Marking comments fetched…");
-  try {
-    await markCommentsFetched(
-      api,
-      snapshotId,
-      comments.map((c) => c.id),
-    );
-  } catch (error) {
-    log(
-      `warning: the record was updated but comments not marked fetched (${error instanceof Error ? error.message : String(error)}); a re-pull of ${options.tag} may duplicate these ${comments.length} item(s).`,
-    );
+  if (cloud) {
+    log("Marking comments fetched…");
+    try {
+      await markCommentsFetched(
+        cloud.api,
+        cloud.snapshotId,
+        comments.map((c) => c.id),
+      );
+    } catch (error) {
+      log(
+        `warning: the record was updated but comments not marked fetched (${error instanceof Error ? error.message : String(error)}); a re-pull of ${options.tag} may duplicate these ${comments.length} item(s).`,
+      );
+    }
   }
 
   return {
@@ -388,14 +473,124 @@ export async function applyTriage(options: {
     count: comments.length,
     feedbackIds,
     taskIds,
+    questionIds,
     skipped,
   };
 }
 
 export function registerCommentsCommand(program: Command): void {
   const comments = program.command("comments").description("stakeholder comment operations");
+  const importCommand = comments
+    .command("import")
+    .description(
+      "stage feedback from where stakeholders already talk — a Figma file's comments, a repository's issues — under .forge/triage/ for the same triage",
+    );
+  const registerImporter = (
+    name: "figma" | "issues",
+    source: ImportSource,
+    inputHelp: string,
+    settledHelp: string,
+  ) =>
+    importCommand
+      .command(name)
+      .argument("<input>", inputHelp)
+      .option("--as <batch>", "the batch name under .forge/triage/ (default: <source>-<today>)")
+      .option("--freeze <tag>", "the freeze this review was about, recorded on each feedback")
+      .option("--include-settled", settledHelp)
+      .description(
+        `stage ${name === "figma" ? "a Figma file's comments" : "a repository's open issues"} for triage — nothing reaches the record until \`forge comments triage apply <batch>\``,
+      )
+      .action(
+        async (input: string, opts: { as?: string; freeze?: string; includeSettled?: boolean }) => {
+          const root = await requireRepoRoot();
+          const result = await stageImport({
+            root,
+            source,
+            input,
+            batch: opts.as,
+            freeze: opts.freeze,
+            includeSettled: opts.includeSettled,
+            log: console.log,
+          });
+          const left = [
+            result.skipped.settled > 0
+              ? `${result.skipped.settled} already settled at the source`
+              : "",
+            result.skipped.pullRequests > 0 ? `${result.skipped.pullRequests} pull request(s)` : "",
+            result.skipped.alreadyInRecord > 0
+              ? `${result.skipped.alreadyInRecord} already in the record`
+              : "",
+          ].filter(Boolean);
+          if (result.count === 0) {
+            console.log(
+              `Nothing to triage${left.length > 0 ? ` (skipped: ${left.join(", ")})` : ""}.`,
+            );
+            return;
+          }
+          console.log(
+            `Staged ${result.count} comment(s) at ${result.staged}${left.length > 0 ? ` (skipped: ${left.join(", ")})` : ""}. ` +
+              `Disposition them with the forge-triage skill in your agent session, then run \`forge comments triage apply ${result.batch}\`.`,
+          );
+        },
+      );
+  registerImporter(
+    "figma",
+    "figma",
+    "a saved comments export (GET /v1/files/:key/comments), or a file key / URL to fetch with FIGMA_TOKEN",
+    "keep comments already resolved in Figma",
+  );
+  registerImporter(
+    "issues",
+    "issue",
+    "a saved issues export (the REST list, or `gh issue list --json`), or owner/repo to fetch (GITHUB_TOKEN optional)",
+    "keep closed issues",
+  );
+
+  const triage = comments
+    .command("triage")
+    .description(
+      "stage and apply comment triage into the record's feedback/ and todos.md (spec/format.md)",
+    );
+
+  triage
+    .argument("<tag>", "freeze tag whose comments to triage")
+    .description(
+      "stage a Forge Cloud review's new comments under .forge/triage/<tag>/ — `forge comments import` stages feedback from elsewhere without an account",
+    )
+    .action(async (tag: string) => {
+      const result = await stageTriage({ tag, log: console.log });
+      if (result.count === 0) {
+        console.log("Nothing to triage — no unfetched comments.");
+        return;
+      }
+      console.log(
+        `Staged ${result.count} comment(s) at ${result.staged}. Disposition them with the forge-triage skill ` +
+          `in your agent session, then run \`forge comments triage apply ${tag}\`.`,
+      );
+    });
+
+  triage
+    .command("apply")
+    .argument("<tag>", "freeze tag (or imported batch name) whose staged comments to apply")
+    .description(
+      "write each staged comment's disposition (.forge/triage/<tag>/proposal.json) into feedback/ and todos.md, then mark them fetched",
+    )
+    .action(async (tag: string) => {
+      const result = await applyTriage({ tag, log: console.log });
+      console.log(
+        `Applied ${result.count} comment(s) → ${result.feedbackIds.length} FEEDBACK item(s)` +
+          (result.taskIds.length > 0 ? `, ${result.taskIds.length} task(s)` : "") +
+          (result.questionIds.length > 0 ? `, ${result.questionIds.length} QUESTION(s)` : "") +
+          (result.skipped.length > 0 ? `, ${result.skipped.length} skipped` : "") +
+          `. Summary at ${result.staged}.`,
+      );
+    });
+
+  // Registered last so `--help` lists the local commands first: commander
+  // orders its groups by the first command in each.
   comments
     .command("archive")
+    .helpGroup(CLOUD_HELP_GROUP)
     .argument("<tag>", "freeze tag whose snapshot should become read-only")
     .description("archive a snapshot: pins stay visible on the preview, new comments are refused")
     .action(async (tag: string) => {
@@ -409,6 +604,7 @@ export function registerCommentsCommand(program: Command): void {
 
   comments
     .command("window")
+    .helpGroup(CLOUD_HELP_GROUP)
     .argument("<tag>", "freeze tag whose feedback round has a deadline")
     .option("--closes <date>", "when the round stops taking comments (YYYY-MM-DD, or with a time)")
     .option("--clear", "remove the deadline and leave the round open-ended")
@@ -441,6 +637,7 @@ export function registerCommentsCommand(program: Command): void {
 
   comments
     .command("resolve")
+    .helpGroup(CLOUD_HELP_GROUP)
     .argument("<tag>", "the release that ships the addressed work")
     .description(
       'tell every earlier snapshot what became of its comments: declined ones carry the DDR, accepted ones whose task is done become "addressed in <tag>"',
@@ -448,53 +645,15 @@ export function registerCommentsCommand(program: Command): void {
     .action(async (tag: string) => {
       const result = await resolveTrail({ tag, log: console.log });
       for (const warning of result.warnings) console.log(`warning: ${warning}`);
-      if (result.addressed === 0 && result.declined === 0) {
+      if (result.addressed === 0 && result.declined === 0 && result.answered === 0) {
         console.log("Nothing to resolve — no settled review feedback to project.");
         return;
       }
       console.log(
         `Resolved ${result.synced} comment(s): ${result.addressed} addressed in ${tag}` +
           (result.declined > 0 ? `, ${result.declined} declined` : "") +
+          (result.answered > 0 ? `, ${result.answered} question(s) answered` : "") +
           ". Old share links now show where each one landed.",
-      );
-    });
-
-  const triage = comments
-    .command("triage")
-    .description(
-      "stage and apply comment triage into the record's feedback/ and todos.md (spec/format.md)",
-    );
-
-  triage
-    .argument("<tag>", "freeze tag whose comments to triage")
-    .description(
-      "stage new comments under .forge/triage/<tag>/ for disposition in your agent session",
-    )
-    .action(async (tag: string) => {
-      const result = await stageTriage({ tag, log: console.log });
-      if (result.count === 0) {
-        console.log("Nothing to triage — no unfetched comments.");
-        return;
-      }
-      console.log(
-        `Staged ${result.count} comment(s) at ${result.staged}. Disposition them with the triage skill ` +
-          `in your agent session, then run \`forge comments triage apply ${tag}\`.`,
-      );
-    });
-
-  triage
-    .command("apply")
-    .argument("<tag>", "freeze tag whose staged comments to apply")
-    .description(
-      "write each staged comment's disposition (.forge/triage/<tag>/proposal.json) into feedback/ and todos.md, then mark them fetched",
-    )
-    .action(async (tag: string) => {
-      const result = await applyTriage({ tag, log: console.log });
-      console.log(
-        `Applied ${result.count} comment(s) → ${result.feedbackIds.length} FEEDBACK item(s)` +
-          (result.taskIds.length > 0 ? `, ${result.taskIds.length} task(s)` : "") +
-          (result.skipped.length > 0 ? `, ${result.skipped.length} skipped` : "") +
-          `. Summary at ${result.staged}.`,
       );
     });
 }
@@ -510,18 +669,38 @@ export function registerCommentsCommand(program: Command): void {
 interface TriageTarget {
   todosDoc: LedgerDocument;
   decisionIds: Set<string>;
+  /** every concept id in the record — what a question's answer may point at */
+  conceptIds: Set<string>;
   nextFeedbackId(): string;
+  nextQuestionId(): string;
+  /** a stakeholder's question as a Question concept, with the same provenance feedback carries (TASK-462) */
+  writeQuestion(input: {
+    id: string;
+    date: string;
+    sourceDetail?: string;
+    from: string;
+    quote: string;
+    status: "open" | "resolved" | "dropped";
+    link?: string;
+    commentId: string;
+    scenarioId?: string;
+    stepId?: string;
+    route?: string;
+    selector?: string;
+  }): Promise<void>;
   writeFeedback(input: {
     id: string;
     date: string;
-    source: "review";
+    source: "review" | ImportSource;
     sourceDetail?: string;
     from: string;
     quote: string;
     status: string;
     link?: string;
-    /** the service comment this feedback came from — what the trail syncs on */
-    commentId: string;
+    /** the service comment this feedback came from — what the trail syncs on; none for an import */
+    commentId?: string;
+    /** where an imported comment lives at its source */
+    url?: string;
     /** the scenario and flow step it was written under, when guided */
     scenarioId?: string;
     stepId?: string;
@@ -544,16 +723,54 @@ async function openTriageTarget(root: string): Promise<TriageTarget> {
   const allocated: string[] = bundle.concepts.flatMap((c) =>
     c.type === "Feedback" && c.id ? [c.id] : [],
   );
+  const allocatedQuestions: string[] = bundle.concepts.flatMap((c) =>
+    c.type === "Question" && c.id ? [c.id] : [],
+  );
 
   return {
     todosDoc,
     decisionIds: new Set(
       bundle.concepts.flatMap((c) => (c.type === "Decision" && c.id ? [c.id] : [])),
     ),
+    conceptIds: new Set(bundle.concepts.flatMap((c) => (c.id ? [c.id] : []))),
     nextFeedbackId() {
       const id = nextId(allocated, "FEEDBACK");
       allocated.push(id);
       return id;
+    },
+    nextQuestionId() {
+      const id = nextId(allocatedQuestions, "QUESTION");
+      allocatedQuestions.push(id);
+      return id;
+    },
+    async writeQuestion(input) {
+      const relPath = path.join("questions", `${input.id}.md`);
+      await fs.mkdir(path.join(bundleRoot, "questions"), { recursive: true });
+      await fs.writeFile(
+        path.join(bundleRoot, relPath),
+        withFrontmatter(
+          {
+            type: "Question",
+            id: input.id,
+            title: oneLine(input.quote).slice(0, 120),
+            date: input.date,
+            question_status: input.status,
+            resolution: input.link,
+            // The same provenance review feedback carries, so the trail can
+            // tell the person who asked what became of it.
+            source: "review",
+            freeze: input.sourceDetail,
+            from: input.from,
+            comment: input.commentId,
+            scenario: input.scenarioId,
+            step: input.stepId,
+            route: input.route,
+            selector: input.selector,
+          },
+          `> ${oneLine(input.quote)}\n`,
+        ),
+        "utf8",
+      );
     },
     async writeFeedback(input) {
       const relPath = path.join("feedback", `${input.id}.md`);
@@ -574,6 +791,7 @@ async function openTriageTarget(root: string): Promise<TriageTarget> {
             // The trail syncs on this: without it the record knows what it
             // decided and has no way to tell the person who asked (T-294).
             comment: input.commentId,
+            url: input.url,
             scenario: input.scenarioId,
             step: input.stepId,
             // "where was this" is the first thing anyone asks of a comment,

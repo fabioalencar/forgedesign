@@ -91,7 +91,7 @@ the repo can answer.
    in two places, it gets one home, and the old file either points at the record or loses
    that section.
 
-8. **Capture decisions already in force** with the `ddr` skill — one per non-obvious choice
+8. **Capture decisions already in force** with the `forge-ddr` skill — one per non-obvious choice
    the project has already made and that a reader would otherwise reverse-engineer from the
    code. Don't manufacture these; three real ones beat a dozen invented.
 
@@ -101,9 +101,9 @@ the repo can answer.
 
 - **Don't create files the project has no content for.** `design/feedback/`,
   `design/stakeholders/`, `design/roles/`, `design/data-model.md`, `design/flows/`,
-  `design/calendar.md`, `design/design-system.md`, and
-  `Components.md` are all on-demand: they appear the first time there is something true to
-  put in them. An empty one is worse than a missing one.
+  `design/calendar.md`, `design/design-system.md`, `design/components.md`, and
+  `design/pages.md` are all on-demand: they appear the first time there is something true
+  to put in them. An empty one is worse than a missing one.
 - **Don't leave the scaffold's placeholder prose in place.** If you scaffold and stop, you
   have left rot behind. Either fill a file in this session or tell the user plainly that it
   is still a template.

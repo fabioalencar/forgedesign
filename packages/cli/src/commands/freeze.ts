@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Command } from "commander";
 import { buildPrototype, type PrototypeBuilds } from "../build.js";
 import { bundleRootOf } from "../bundle-index.js";
+import { checksSatisfied } from "../check.js";
 import { readUserConfig } from "../config.js";
 import { generateFeatureLog } from "../feature-log.js";
 import {
@@ -27,12 +28,15 @@ import { generateReleaseHub } from "../hub.js";
 import { ensureProjectId, revertProjectId } from "../project.js";
 import { readRecordVersion, versionRefusal } from "../record-version.js";
 import { resolveTrail } from "../resolution-trail.js";
+import { hashBuiltRoutes } from "../routes.js";
 import { emitScenarioBundle } from "../scenario-emit.js";
 
 export interface FreezeOptions {
   tag: string;
   message: string;
   cwd?: string;
+  /** refuse to tag unless every checker has a report for this commit (TASK-456) */
+  requireCheck?: boolean;
   log?: (line: string) => void;
 }
 
@@ -73,6 +77,32 @@ async function assertFreezable(root: string, options: FreezeOptions): Promise<vo
   }
   if (findFreeze(await readFreezes(root), options.tag)) {
     throw new Error(`freezes.json already has an entry for "${options.tag}"`);
+  }
+
+  // The check gate (TASK-456, DDR-127): a report per checker, describing this
+  // commit, under checks/<tag>/. Checked before the tag, like everything else
+  // here, so a refusal leaves no trace.
+  if (options.requireCheck) {
+    if (version.kind !== "current") {
+      throw new Error(
+        "--require-check needs a current record — there is no bundle to hold check reports",
+      );
+    }
+    const gaps = await checksSatisfied(
+      root,
+      version.recordRoot,
+      options.tag,
+      await headCommit(root),
+    );
+    const problems = [
+      ...gaps.missing.map((name) => `${name} has no report`),
+      ...gaps.stale.map((name) => `${name}'s report is for an older commit`),
+    ];
+    if (problems.length > 0) {
+      throw new Error(
+        `--require-check: ${problems.join("; ")} — run \`forge check ${options.tag}\`, commit its reports, then freeze`,
+      );
+    }
   }
 }
 
@@ -121,14 +151,8 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
     log("Building prototype and Storybook…");
     const builds = await buildPrototype(root);
 
-    // The snapshot registers with the comment API so a stakeholder can comment
-    // once the freeze is hosted by `forge publish` (DDR-073).
+    // Read once: the resolution trail below runs only when someone is signed in.
     const config = await readUserConfig();
-    // Narrow once to a typed config (or null) instead of `!`-asserting later.
-    const commentsConfig =
-      config.commentsApiUrl && config.commentsApiKey
-        ? { apiUrl: config.commentsApiUrl, apiKey: config.commentsApiKey }
-        : null;
     // Null until `forge publish` mints the gate and writes the id back
     // (DDR-104). Freezes cut before that change carry a real id here and the
     // comment commands still read it, which is why the field stays.
@@ -137,7 +161,7 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
     // Every freeze, not only one with a comment API configured (TASK-416).
     // `projectId` is the repo's identity — `forge publish` sends it to Cloud as
     // the thing a hosted prototype belongs to — and minting it here used to sit
-    // inside the `if (commentsConfig)` below, left over from when the comment
+    // inside an `if` on the comment API config, left over from when the comment
     // API was the only thing that wanted an id. The consequence was that a
     // Cloud customer who had only run `forge login` froze successfully, got no
     // id, and then met `forge publish: this repo has no projectId in forge.json
@@ -195,6 +219,12 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
       storybookUrl,
     });
 
+    // Which screens this version has, as content hashes (TASK-461). Read from
+    // the build the scenario bundle has already been emitted into, since that
+    // is the artifact a stakeholder will see; the comparison with the previous
+    // freeze happens wherever the freeze is read, never here.
+    const routes = await hashBuiltRoutes(builds.prototypeDir);
+
     const record: FreezeRecord = {
       tag: options.tag,
       date,
@@ -202,6 +232,7 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
       previewUrl,
       storybookUrl,
       snapshotId,
+      routes,
     };
     log("Writing freezes.json…");
     await appendFreeze(root, record);
@@ -211,8 +242,11 @@ export async function runFreeze(options: FreezeOptions): Promise<FreezeResult> {
     // Best-effort — a comment API that is unreachable must not undo a freeze.
     // A record still on v0.1 has nowhere to read dispositions from, and saying
     // so on every freeze would be noise, so it is skipped without a word.
+    // Any credential the comment commands accept, Cloud first (TASK-477) — not
+    // only the direct config the snapshot registration above still uses.
+    const signedIn = Boolean(config.cloudToken || (config.commentsApiUrl && config.commentsApiKey));
     let resolvedRecordRoot: string | null = null;
-    if (commentsConfig && (await bundleRootOf(root)) !== null) {
+    if (signedIn && (await bundleRootOf(root)) !== null) {
       try {
         log("Resolving stakeholder comments addressed in this release…");
         const trail = await resolveTrail({
@@ -289,19 +323,24 @@ export function registerFreezeCommand(program: Command): void {
     .command("freeze")
     .argument("<tag>", "immutable version name (alpha, beta, mvp, …)")
     .requiredOption("-m, --message <message>", "annotated tag message")
-    .description(
-      "freeze the current version: annotated tag, prototype + Storybook builds, and a freezes.json entry committed on main; host it for review with `forge publish`",
+    .option(
+      "--require-check",
+      "refuse to tag unless every checker has a report for this commit under design/checks/<tag>/ (see `forge check`)",
     )
-    .action(async (tag: string, opts: { message: string }) => {
+    .description(
+      "freeze the current version: annotated tag, prototype + Storybook builds, and a freezes.json entry committed on main; the build is static, so any host can serve it",
+    )
+    .action(async (tag: string, opts: { message: string; requireCheck?: boolean }) => {
       const result = await runFreeze({
         tag,
         message: opts.message,
+        requireCheck: opts.requireCheck,
         log: console.log,
       });
       for (const warning of result.warnings) console.warn(`warning: ${warning}`);
       console.log(`\nFroze ${result.record.tag} at ${result.record.commit.slice(0, 7)}`);
       console.log(
-        `  preview:   ${result.record.previewUrl ?? `publish it with \`forge publish ${tag}\``}`,
+        `  preview:   ${result.record.previewUrl ?? "not hosted — the build is static, so any host can serve it"}`,
       );
       console.log(`  storybook: ${result.record.storybookUrl ?? "not deployed"}`);
       console.log(`  handoff pack: handoff/${result.record.tag}/`);

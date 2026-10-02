@@ -80,6 +80,18 @@ describe("projectUnfetchedCount", () => {
     expect(await projectUnfetchedCount(root)).toEqual({ kind: "count", count: 5 });
   });
 
+  it("counts through Cloud for a creator signed in with forge login (TASK-477)", async () => {
+    await fs.mkdir(process.env.FORGE_HOME!, { recursive: true });
+    await fs.writeFile(
+      path.join(process.env.FORGE_HOME!, "config.json"),
+      JSON.stringify({ cloudToken: "tok-creator", cloudApiUrl: apiUrl }),
+      "utf8",
+    );
+    const root = await makeFrozenRepo(["snap-a"]);
+    commentsBySnapshot = { "snap-a": 4 };
+    expect(await projectUnfetchedCount(root)).toEqual({ kind: "count", count: 4 });
+  });
+
   it("says which of the three reasons there is no count (TASK-332)", async () => {
     // One `null` for all three made `forge status` unable to answer the
     // question someone has right after configuring the key: did it work?

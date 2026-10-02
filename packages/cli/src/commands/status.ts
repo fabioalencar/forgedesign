@@ -83,7 +83,7 @@ function describeUnfetched(result: UnfetchedCount): string {
     case "count":
       return String(result.count);
     case "not-configured":
-      return "n/a (set commentsApiUrl and commentsApiKey in ~/.forge/config.json)";
+      return "n/a (no Forge Cloud account on this machine)";
     case "no-snapshots":
       return "n/a (no freeze has registered a snapshot yet)";
     case "unreachable":
@@ -118,7 +118,12 @@ export function formatStatus(statuses: ProjectStatus[]): string {
         ? `  last freeze: ${s.lastFreeze.tag} (${s.lastFreeze.date})`
         : "  last freeze: never",
     );
-    lines.push(`  unfetched comments: ${describeUnfetched(s.unfetchedComments)}`);
+    // Comments come from a Forge Cloud review; without an account there is
+    // nothing to count, and a line saying so would only advertise a closed
+    // beta on every run (DDR-137).
+    if (s.unfetchedComments.kind !== "not-configured") {
+      lines.push(`  unfetched comments: ${describeUnfetched(s.unfetchedComments)}`);
+    }
     return lines.join("\n");
   });
 

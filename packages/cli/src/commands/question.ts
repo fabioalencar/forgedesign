@@ -11,7 +11,7 @@ export function registerQuestionCommand(program: Command): void {
     .option("--status <status>", `one of ${QUESTION_STATUSES.join(", ")}`, "open")
     .option("--link <id>", "what answered it, when recording a resolved question")
     .description(
-      "record an open question — the write path the forge-init and intake skills use instead of hand-writing QUESTION-### entries",
+      "record an open question — the write path the forge-init and forge-intake skills use instead of hand-writing QUESTION-### entries",
     )
     .action(
       async (

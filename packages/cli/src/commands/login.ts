@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import {
   awaitApproval,
+  CLOUD_HELP_GROUP,
   clearToken,
   cloudApiUrl,
   requestDeviceCode,
@@ -12,6 +13,7 @@ import { readUserConfig } from "../config.js";
 export function registerCloudAuthCommands(program: Command): void {
   program
     .command("login")
+    .helpGroup(CLOUD_HELP_GROUP)
     .option("--url <url>", "Forge Cloud base URL (for development against a local instance)")
     .description("connect this machine to a Forge Cloud account")
     .action(async (options: { url?: string }) => {
@@ -33,6 +35,7 @@ export function registerCloudAuthCommands(program: Command): void {
         return;
       }
 
+      console.log("\nForge Cloud is in closed beta: sign-in works for invited accounts only.");
       // The code goes first and alone: it is the thing the user has to carry to
       // the browser, and burying it under a URL is how it gets mistyped.
       console.log(`\n  Your code:  ${grant.userCode}\n`);
@@ -70,6 +73,7 @@ export function registerCloudAuthCommands(program: Command): void {
 
   program
     .command("logout")
+    .helpGroup(CLOUD_HELP_GROUP)
     .description("disconnect this machine from Forge Cloud")
     .action(async () => {
       if (!(await readUserConfig()).cloudToken) {
@@ -84,12 +88,13 @@ export function registerCloudAuthCommands(program: Command): void {
 
   program
     .command("whoami")
+    .helpGroup(CLOUD_HELP_GROUP)
     .description("show which Forge Cloud account this machine publishes to")
     .action(async () => {
       const identity = await whoami();
       if (!identity) {
-        console.log("Not signed in to Forge Cloud — run `forge login`.");
-        console.log("Freezing still works: it produces a build you can host anywhere.");
+        console.log("Not signed in to Forge Cloud (closed beta, invited accounts only).");
+        console.log("Nothing else needs it: a freeze is a static build you can host anywhere.");
         return;
       }
       console.log(`${identity.email} · ${identity.plan} plan`);

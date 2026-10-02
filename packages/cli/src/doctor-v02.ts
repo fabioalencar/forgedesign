@@ -25,6 +25,7 @@ import {
   type ParsedConcept,
   parseConcept,
   parseFrontmatter,
+  parsePageRows,
   parseTodos,
   ROOT_CONCEPT_FILES,
   type ScannedBundle,
@@ -33,6 +34,7 @@ import {
 import { type DoctorFinding, type DoctorResult, finding } from "./doctor-types.js";
 import { readFreezes } from "./freezes.js";
 import { repoRoot as findRepoRoot, git } from "./git.js";
+import { normalizeRoute } from "./routes.js";
 
 /** Which rule name each concept-level problem reports under. */
 const PROBLEM_RULES: Record<ConceptProblemKind, string> = {
@@ -46,13 +48,15 @@ const PROBLEM_RULES: Record<ConceptProblemKind, string> = {
   "id-filename-mismatch": "id-shape",
   "status-invalid": "invalid-enum",
   "domain-status-invalid": "invalid-enum",
+  "reach-invalid": "invalid-enum",
+  "audience-invalid": "invalid-enum",
 };
 
 /**
  * Generators whose output doctor recognizes. An unknown generator means either
  * a typo or a tool this record's tooling does not own — both worth reporting.
  */
-const KNOWN_GENERATORS = [/^forge freeze$/, /^forge-cli\/.+$/];
+const KNOWN_GENERATORS = [/^forge freeze$/, /^forge check$/, /^forge-cli\/.+$/];
 
 export interface DoctorV02Options {
   /** bundle directory relative to the repo root; defaults to `design` */
@@ -105,6 +109,7 @@ export async function runDoctorV02(
     ...checkResolvableRefs(bundle, knownIds),
     ...checkTaskStatuses(todos),
     ...checkFeedbackRules(bundle),
+    ...checkPageManifest(bundle),
     ...(await checkGeneratedFiles(root, recordRoot, bundle, latestFreezeId)),
     ...(await checkDecisionImmutability(root, recordRoot, bundle, options.base)),
     ...checkFormatVersion(manifest),
@@ -246,6 +251,49 @@ function checkFeedbackRules(bundle: ScannedBundle): DoctorFinding[] {
     if (status === "declined" && !resolution?.startsWith("DDR-")) {
       findings.push(
         finding("disposition-rule", `${id}: declined feedback must link a DDR-### id`, file),
+      );
+    }
+  }
+  return findings;
+}
+
+/**
+ * Rule 13: a page manifest, when there is one, has one readable row per page
+ * and declares no route twice (DDR-130).
+ *
+ * Optional means exactly this: a record with no `pages.md` is asked for
+ * nothing, and one that has it is held to its shape. A route is compared after
+ * normalisation, so `/register` and `/register/` are the one page they are in
+ * the build. Line numbers are the file's, not the body's — a reader opens the
+ * file, not the frontmatter-stripped body.
+ */
+function checkPageManifest(bundle: ScannedBundle): DoctorFinding[] {
+  const findings: DoctorFinding[] = [];
+  for (const concept of bundle.concepts) {
+    if (concept.type !== "Page Manifest") continue;
+    const file = relFile(concept.relPath);
+    const bodyStart = concept.raw.length - concept.body.length;
+    const offset = (concept.raw.slice(0, bodyStart).match(/\n/g) ?? []).length;
+    const { rows, problems } = parsePageRows(concept.body);
+    for (const problem of problems) {
+      findings.push(
+        finding("page-manifest", `line ${offset + problem.line}: ${problem.message}`, file),
+      );
+    }
+    const seen = new Map<string, number>();
+    for (const row of rows) {
+      const route = normalizeRoute(row.route);
+      const first = seen.get(route);
+      if (first === undefined) {
+        seen.set(route, offset + row.line);
+        continue;
+      }
+      findings.push(
+        finding(
+          "page-manifest",
+          `line ${offset + row.line}: \`${row.route}\` is already declared on line ${first} — one row per page`,
+          file,
+        ),
       );
     }
   }

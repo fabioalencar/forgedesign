@@ -27,6 +27,7 @@ let server: http.Server;
 let base: string;
 let resolveCalls: ResolvePayload[];
 let resolveStatus: number;
+let resolveAuth: Array<string | undefined>;
 let previousForgeHome: string | undefined;
 
 beforeEach(async () => {
@@ -35,6 +36,7 @@ beforeEach(async () => {
   process.env.FORGE_HOME = path.join(sandbox, ".forge");
 
   resolveCalls = [];
+  resolveAuth = [];
   resolveStatus = 200;
   server = http.createServer((req, res) => {
     let raw = "";
@@ -42,7 +44,10 @@ beforeEach(async () => {
       raw += chunk;
     });
     req.on("end", () => {
-      if (req.url === "/comments/resolve") {
+      // The direct comment API and the control plane's `/api/cli` proxy of it
+      // take the same body at the same path, under different prefixes.
+      if (req.url === "/comments/resolve" || req.url === "/api/cli/comments/resolve") {
+        resolveAuth.push(req.headers.authorization);
         res.statusCode = resolveStatus;
         res.setHeader("Content-Type", "application/json");
         if (resolveStatus !== 200) return void res.end(JSON.stringify({ error: "db is down" }));
@@ -216,6 +221,30 @@ const readFeedback = (root: string, id: string) =>
   fs.readFile(path.join(root, "design", "feedback", `${id}.md`), "utf8");
 
 describe("the resolution trail (T-294)", () => {
+  it("closes the loop for a Cloud creator signed in with forge login (TASK-477)", async () => {
+    // Every other `forge comments` subcommand went Cloud-first in TASK-420;
+    // this one kept reading only the operator's direct key, so a customer's
+    // "addressed in v3" never reached the stakeholder.
+    await fs.writeFile(
+      path.join(process.env.FORGE_HOME as string, "config.json"),
+      JSON.stringify({ cloudToken: "tok-creator", cloudApiUrl: base }),
+      "utf8",
+    );
+    const root = await makeRecord();
+
+    const result = await resolveTrail({ tag: "v3", cwd: root });
+
+    expect(result.addressed).toBe(1);
+    expect(resolveCalls).toHaveLength(1);
+    expect(resolveAuth).toEqual(["Bearer tok-creator"]);
+  });
+
+  it("names forge login when nothing is signed in", async () => {
+    await fs.writeFile(path.join(process.env.FORGE_HOME as string, "config.json"), "{}", "utf8");
+    const root = await makeRecord();
+    await expect(resolveTrail({ tag: "v3", cwd: root })).rejects.toThrow(/forge login/);
+  });
+
   it("addresses shipped feedback, declines with the decision, and leaves open work alone", async () => {
     const root = await makeRecord();
 
@@ -248,6 +277,63 @@ describe("the resolution trail (T-294)", () => {
     expect(shipped).toContain("addressed_in: v3");
     // …and the one whose task is still open says nothing yet.
     expect(await readFeedback(root, "FEEDBACK-002")).not.toContain("addressed_in");
+  });
+
+  it("tells the service what answered a stakeholder's question, by id and title, and stamps nothing (TASK-462)", async () => {
+    const root = await makeRecord();
+    const questions = path.join(root, "design", "questions");
+    await fs.mkdir(questions, { recursive: true });
+    const question = (id: string, fields: Record<string, string>) =>
+      fs.writeFile(
+        path.join(questions, `${id}.md`),
+        feedback(
+          {
+            type: "Question",
+            id,
+            title: "Why is there only one way in?",
+            date: "2026-07-04",
+            source: "review",
+            freeze: "FREEZE-001",
+            from: "PM",
+            ...fields,
+          },
+          "Why is there only one way in?",
+        ),
+        "utf8",
+      );
+    const ANSWERED = "44444444-4444-4444-8444-444444444444";
+    const DROPPED = "55555555-5555-4555-8555-555555555555";
+    const OPEN = "66666666-6666-4666-8666-666666666666";
+    await question("QUESTION-001", {
+      question_status: "resolved",
+      resolution: "DDR-051",
+      comment: ANSWERED,
+    });
+    await question("QUESTION-002", {
+      question_status: "dropped",
+      resolution: "DDR-051",
+      comment: DROPPED,
+    });
+    await question("QUESTION-003", { question_status: "open", comment: OPEN });
+
+    const result = await resolveTrail({ tag: "v3", cwd: root });
+
+    expect(result.answered).toBe(1);
+    expect(result.declined).toBe(2); // the dropped question and the declined feedback
+    expect(result.stamped).toEqual(["FEEDBACK-001"]); // questions carry no stamp
+    const resolutions = resolveCalls[0]?.resolutions ?? [];
+    expect(resolutions).toContainEqual({
+      commentId: ANSWERED,
+      status: "addressed",
+      note: "DDR-051: Pricing stays visible to logged-out visitors",
+    });
+    expect(resolutions).toContainEqual({
+      commentId: DROPPED,
+      status: "declined",
+      note: "DDR-051: Pricing stays visible to logged-out visitors",
+    });
+    // An open question has nothing to say yet.
+    expect(resolutions.some((r) => r.commentId === OPEN)).toBe(false);
   });
 
   it("re-pushes settled feedback on the next release without re-stamping it", async () => {

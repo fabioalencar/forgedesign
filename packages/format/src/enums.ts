@@ -24,7 +24,16 @@ export function isFeedbackStatus(value: string): value is FeedbackStatus {
   return (FEEDBACK_STATUSES as readonly string[]).includes(value);
 }
 
-export const FEEDBACK_SOURCES = ["meeting", "email", "chat", "review", "scan"] as const;
+/** `figma` and `issue` are imported batches (TASK-463, DDR-124): a comment on a Figma file, an issue in a tracker. */
+export const FEEDBACK_SOURCES = [
+  "meeting",
+  "email",
+  "chat",
+  "review",
+  "scan",
+  "figma",
+  "issue",
+] as const;
 export type FeedbackSource = (typeof FEEDBACK_SOURCES)[number];
 export function isFeedbackSource(value: string): value is FeedbackSource {
   return (FEEDBACK_SOURCES as readonly string[]).includes(value);
@@ -34,6 +43,29 @@ export const QUESTION_STATUSES = ["open", "resolved", "dropped"] as const;
 export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
 export function isQuestionStatus(value: string): value is QuestionStatus {
   return (QUESTION_STATUSES as readonly string[]).includes(value);
+}
+
+/**
+ * How far a decision reaches (spec §5, TASK-457): `project` is about this
+ * product, its users, brand or constraints; `general` would hold on a project
+ * with a different client. Optional on the file — absent means `project`.
+ */
+export const DECISION_REACHES = ["project", "general"] as const;
+export type DecisionReach = (typeof DECISION_REACHES)[number];
+export const DEFAULT_DECISION_REACH: DecisionReach = "project";
+export function isDecisionReach(value: string): value is DecisionReach {
+  return (DECISION_REACHES as readonly string[]).includes(value);
+}
+
+/**
+ * Who may see a concept when the record is published (spec §3, DDR-128):
+ * the creator only, or the stakeholders a freeze is sent to. Optional on the
+ * file; each type has a default, and `audienceOf` in concepts.ts applies it.
+ */
+export const AUDIENCES = ["owner", "stakeholders"] as const;
+export type Audience = (typeof AUDIENCES)[number];
+export function isAudience(value: string): value is Audience {
+  return (AUDIENCES as readonly string[]).includes(value);
 }
 
 /** DDR status is `draft | accepted | superseded (by DDR-###)` — the suffix carries a link. */

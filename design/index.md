@@ -17,3 +17,4 @@ file below is one concept; tools and agents read them directly.
 
 * [Title](decisions/DDR-000-template.md) - Decision · DDR-000
 * [This repository is the open half, extracted as a fresh history with a record of its own](decisions/DDR-001-extraction-and-what-this-repo-is.md) - Decision · DDR-001
+* [The three packages publish under one version number](decisions/DDR-002-one-version-for-all-three-packages.md) - Decision · DDR-002

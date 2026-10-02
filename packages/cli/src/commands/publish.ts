@@ -1,14 +1,17 @@
 import path from "node:path";
 import type { Command } from "commander";
 import { prototypeOutputDir } from "../build.js";
+import { bundleRootOf } from "../bundle-index.js";
+import { CLOUD_HELP_GROUP } from "../cloud-auth.js";
 import { readFreezes, setFreezeSnapshotId } from "../freezes.js";
 import { repoRoot } from "../git.js";
 import { readProjectFile } from "../project.js";
-import { publishBuild, withdrawPublished } from "../publish.js";
+import { collectRecord, publishBuild, withdrawPublished } from "../publish.js";
 
 export function registerPublishCommand(program: Command): void {
   program
     .command("publish")
+    .helpGroup(CLOUD_HELP_GROUP)
     .argument("<tag>", "the freeze tag to publish")
     .description("host a frozen build on Forge Cloud and get a link for a stakeholder")
     .option(
@@ -51,6 +54,12 @@ export function registerPublishCommand(program: Command): void {
         return;
       }
 
+      // The record goes with the build (DDR-129) — the concepts stakeholders
+      // may see, as they stood at the tag. A repo with no v0.2 record sends
+      // none, and that is not an error: the build publishes as it always did.
+      const recordRoot = await bundleRootOf(root);
+      const record = recordRoot === null ? undefined : await collectRecord(root, tag, recordRoot);
+
       console.log(`Publishing ${tag}…`);
       const outcome = await publishBuild({
         buildDir,
@@ -58,6 +67,7 @@ export function registerPublishCommand(program: Command): void {
         repoName: path.basename(root),
         tag,
         force: options.force,
+        record,
       });
 
       if (!outcome.ok) {
@@ -85,6 +95,27 @@ export function registerPublishCommand(program: Command): void {
         `  ${fileCount} file(s) hosted · ${freezesUsed} freeze(s) published on this plan`,
       );
 
+      // Say what crossed and what did not, in the brief's words: the repo stays
+      // home; what was published is a snapshot the creator chose. The count of
+      // what stayed is the reassurance — a creator who just flipped one
+      // decision to stakeholders can see the other hundred did not follow it.
+      if (record) {
+        if (typeof outcome.result.recordFileCount === "number") {
+          console.log(
+            record.kept > 0
+              ? `  ${record.kept} record concept(s) crossed for stakeholders · ${record.withheld} stayed home`
+              : `  no record concept crossed — nothing at ${tag} has audience: stakeholders`,
+          );
+        } else if (record.kept > 0) {
+          // A service from before the crossing ignores the field. The build is
+          // hosted exactly as before, and the creator should know the record
+          // was not — silence here would read as "it went".
+          console.log(
+            "  the record did not cross — this Cloud predates it; the build is hosted as before",
+          );
+        }
+      }
+
       // Shown here and nowhere else on this machine (TASK-447, DDR-115). It is
       // deliberately not written to `freezes.json`, which is tracked in Git —
       // so the sentence has to say where it lives instead, or the next question
@@ -105,6 +136,7 @@ export function registerPublishCommand(program: Command): void {
 
   program
     .command("unpublish")
+    .helpGroup(CLOUD_HELP_GROUP)
     .argument("<tag>", "the published freeze to stop serving")
     .description("stop Forge Cloud serving a published freeze")
     .action(async (tag: string) => {

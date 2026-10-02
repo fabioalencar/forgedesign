@@ -2,6 +2,8 @@
   "name": "@forgedesign/scenarios",
   "version": "0.1.0",
   "license": "Apache-2.0",
+  "homepage": "https://useforge.design",
+  "bugs": "https://github.com/fabioalencar/forgedesign/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fabioalencar/forgedesign.git",
@@ -30,5 +32,7 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
-  "private": true
+  "publishConfig": {
+    "access": "public"
+  }
 }

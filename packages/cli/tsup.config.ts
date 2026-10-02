@@ -15,7 +15,6 @@ export default defineConfig({
     "src/intake.ts",
     "src/scenarios.ts",
     "src/datasets.ts",
-    "src/artifact-types.ts",
     "src/config.ts",
     "src/doctor.ts",
     "src/commands/comments.ts",

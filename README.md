@@ -5,6 +5,8 @@ building happens in your own coding agent. Forge owns what that work leaves behi
 decisions, the tasks, the stakeholder feedback, and the frozen versions people were
 actually shown.
 
+![forge](assets/banner.png)
+
 This repository is the open half, Apache-2.0. It is also **its own first user**: the
 `design/` directory here is a Design Record in the format these packages implement, and CI
 runs `forge doctor` against it on every push.
@@ -21,23 +23,32 @@ runs `forge doctor` against it on every push.
 
 ## Running it
 
-The packages are not on npm yet, so run the CLI from a clone:
+```sh
+npm install -g @forgedesign/cli
+forge --help
+```
+
+Node 20 or later. The command is `forge`; if Atlassian's `@forge/cli` is installed too, the
+two binaries share that name, so whichever was installed last answers.
+
+Point it at a project — including one that already has code:
+
+```sh
+forge init ../my-prototype
+forge skills install --home   # the agent skills, for Claude Code and Codex, in every project
+```
+
+That writes a `design/` bundle and a `forge.json`. `forge doctor` then checks the record
+against the format's rules: unique ids, references that resolve, valid statuses, and
+accepted decisions that have not been quietly edited.
+
+To work on the packages themselves, build from a clone:
 
 ```sh
 pnpm install
 pnpm -r build
 node packages/cli/dist/index.js --help
 ```
-
-Point it at a project — including one that already has code:
-
-```sh
-node packages/cli/dist/index.js init ../my-prototype
-```
-
-That writes a `design/` bundle and a `forge.json`. `forge doctor` then checks the record
-against the format's rules: unique ids, references that resolve, valid statuses, and
-accepted decisions that have not been quietly edited.
 
 ## The idea
 
@@ -61,12 +72,17 @@ stay consistent without anyone remembering to make them so.
 ## What is not here
 
 Publishing a frozen version to a URL a stakeholder can open, the PIN gate in front of it,
-and the comment service behind it are a separate commercial service.
+and the comment service behind it are a separate commercial service,
+[Forge Cloud](https://useforge.design). **It is a closed beta for now, with invited accounts
+only and no open sign-up.** Its commands (`forge login`, `forge publish`) are in the CLI and
+listed apart in `forge --help`; nothing else in this repository needs them.
 
 The line is drawn at **serving, not capability**. Everything that produces a record is here
-and is Apache-2.0. A freeze is a portable directory of static files — you can host one
-yourself and never involve the service at all. What you would be reimplementing is a server,
-not a format.
+and is Apache-2.0, and the whole loop runs without the service: a freeze is a portable
+directory of static files you can host anywhere, and stakeholder feedback comes back into
+the record from a Figma file's comments or a repository's issues (`forge comments import`)
+as well as from a hosted review. What you would be reimplementing is a server, not a
+format.
 
 ## Contributing
 

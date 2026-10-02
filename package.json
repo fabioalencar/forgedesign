@@ -12,7 +12,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "knip": "knip"
+    "knip": "knip",
+    "check:versions": "node scripts/check-versions.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",

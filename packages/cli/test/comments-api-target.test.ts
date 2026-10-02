@@ -8,7 +8,7 @@
 // nothing.
 
 import { describe, expect, it } from "vitest";
-import { commentsApiFor } from "../src/commands/comments.js";
+import { commentsApiFor } from "../src/comments-client.js";
 
 describe("commentsApiFor", () => {
   it("goes through the control plane when the machine is signed in", () => {

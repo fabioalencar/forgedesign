@@ -2,14 +2,15 @@
   "name": "@forgedesign/cli",
   "version": "0.1.0",
   "license": "Apache-2.0",
+  "homepage": "https://useforge.design",
+  "bugs": "https://github.com/fabioalencar/forgedesign/issues",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/fabioalencar/forgedesign.git",
     "directory": "packages/cli"
   },
-  "description": "Forge CLI \u2014 versioning ceremony and stakeholder feedback loop for the design record",
+  "description": "The design record for AI-built prototypes: decisions, tasks, frozen versions and stakeholder feedback, as Markdown in your repo",
   "type": "module",
-  "private": true,
   "engines": {
     "node": ">=20"
   },
@@ -56,10 +57,6 @@
     "./datasets": {
       "types": "./dist/datasets.d.ts",
       "import": "./dist/datasets.js"
-    },
-    "./artifact-types": {
-      "types": "./dist/artifact-types.d.ts",
-      "import": "./dist/artifact-types.js"
     },
     "./config": {
       "types": "./dist/config.d.ts",
@@ -109,5 +106,8 @@
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

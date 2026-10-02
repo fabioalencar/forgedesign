@@ -1,9 +1,9 @@
 ---
-name: freeze
+name: forge-freeze
 description: Gather release notes conversationally and run forge freeze to tag, build, and (optionally) deploy an immutable version for stakeholder review. Use when the user asks to "freeze", "cut a release", "tag a version", or wants to put the current state in front of a stakeholder.
 ---
 
-# freeze
+# forge-freeze
 
 Freezes are immutable version snapshots (spec/format.md): an annotated Git tag,
 a prototype + Storybook build, immutable preview URLs, a handoff pack, and a
@@ -38,14 +38,20 @@ sure the tag actually tells the story of what changed, not just stamping a versi
    ```bash
    forge freeze <tag> --message "<the summary from step 2>"
    ```
-   Freeze produces the artifact; it does not host it. If the user wants a
-   stakeholder to see it, follow with `forge publish <tag>`, which prints the review URL.
+   Freeze produces the artifact; it does not host it. The build is a static directory, so
+   any host can serve it — that is how a stakeholder sees it without Forge Cloud. If the
+   user has a Forge Cloud account (a closed beta, invited accounts only; `forge whoami`
+   says), follow with `forge publish <tag>`, which prints the review URL. Don't suggest
+   signing up: there is no open sign-up yet.
+   Publish sends the build and, beside it, the record concepts whose `audience` is
+   stakeholders as they stood at the tag — it prints how many crossed and how many stayed
+   home. Nothing owner-only leaves the repo.
 
 6. **Report back** exactly what the command printed: the review URL if you published, the
    PIN that publish printed with it, and where the handoff pack landed. Don't paraphrase
    the URLs — copy them verbatim so the user can hand them off directly.
 
-   **Say plainly that the PIN is not saved in the repo.** It is shown once, and after that
+   **If you published, say plainly that the PIN is not saved in the repo.** It is shown once, and after that
    it lives only in Cloud, at `useforge.design/cloud/prototypes`, where it can also be
    changed. That is deliberate: it used to be committed to `freezes.json`, which put every
    review gate into every clone of the repository (DDR-115).

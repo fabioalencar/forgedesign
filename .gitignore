@@ -7,3 +7,6 @@ coverage/
 .forge/
 packages/cli/src/generated/
 .pnpm-store/
+
+# Claude Code per-machine settings hold absolute local paths
+.claude/settings.local.json

@@ -60,6 +60,7 @@ describe("the catalogue", () => {
       "Data Model",
       "Design System",
       "Component Inventory",
+      "Page Manifest",
     ]);
     expect(CONCEPT_CATALOGUE.Decision.writtenBy).toBe("forge ddr apply");
   });
@@ -116,6 +117,16 @@ describe("addConcept", () => {
     const result = await addConcept(repo, "data-model");
     expect(result.path).toBe("design/data-model.md");
     await expect(addConcept(repo, "calendar", "Q3")).rejects.toThrow(/takes no name/);
+  });
+
+  it("scaffolds the page manifest on demand, at the file the format names (TASK-468)", async () => {
+    const result = await addConcept(repo, "pages");
+    expect(result.path).toBe("design/pages.md");
+    const text = await read(result.path);
+    expect(parseConcept("pages.md", text).type).toBe("Page Manifest");
+    // The starter says the row shape, since the shape is the whole convention.
+    expect(text).toContain("- /route · Title");
+    await expect(addConcept(repo, "page", "Home")).rejects.toThrow(/takes no name/);
   });
 
   it("opens the body with a comment rather than placeholder prose", async () => {
