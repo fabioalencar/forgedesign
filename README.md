@@ -5,6 +5,8 @@ building happens in your own coding agent. Forge owns what that work leaves behi
 decisions, the tasks, the stakeholder feedback, and the frozen versions people were
 actually shown.
 
+![forge](assets/banner.webp)
+
 This repository is the open half, Apache-2.0. It is also **its own first user**: the
 `design/` directory here is a Design Record in the format these packages implement, and CI
 runs `forge doctor` against it on every push.
