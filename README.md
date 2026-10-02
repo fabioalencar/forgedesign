@@ -1,5 +1,7 @@
 # Forge
 
+[![CI](https://github.com/fabioalencar/forgedesign/actions/workflows/ci.yml/badge.svg)](https://github.com/fabioalencar/forgedesign/actions/workflows/ci.yml)
+
 **Forge is the design record for AI-built prototypes.** It is not the build tool — the
 building happens in your own coding agent. Forge owns what that work leaves behind: the
 decisions, the tasks, the stakeholder feedback, and the frozen versions people were
