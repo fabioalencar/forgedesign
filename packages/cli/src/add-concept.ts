@@ -77,6 +77,11 @@ export const CONCEPT_CATALOGUE: Record<ConceptType, ConceptEntry> = {
     purpose: "Features closed per freeze",
     writtenBy: "forge freeze (generated)",
   },
+  Check: {
+    keys: ["check", "checks"],
+    purpose: "One checker's report on one version — what it found, at which commit",
+    writtenBy: "forge check (generated)",
+  },
   Decision: {
     keys: ["decision", "decisions", "ddr"],
     purpose: "One decision, with its rationale and the alternatives it beat",
@@ -173,6 +178,16 @@ export const CONCEPT_CATALOGUE: Record<ConceptType, ConceptEntry> = {
     purpose: "The component inventory",
     guidance: "What exists, what each is for, and where it is used.",
   },
+  "Page Manifest": {
+    keys: ["pages", "page", "page-manifest"],
+    purpose:
+      "Which pages the prototype has: a route, a title, and the flows and stories that touch it",
+    guidance:
+      "One row per page: `- /route · Title — the flows, stories and tasks that touch it, by id`. " +
+      "The route is the build's, root-relative, and is the page's identity; reference what " +
+      "touches the page rather than restating it. This is intent — which screens changed " +
+      "is derived from the build at freeze, and the feature log prints this beside it.",
+  },
 };
 
 /** Types this command writes — the rest name the command that owns them. */
@@ -250,7 +265,7 @@ export async function addConcept(
   let title: string;
 
   if (dir === undefined) {
-    // One of the four single-file concepts; the format names the file, not the user.
+    // One of the single-file concepts; the format names the file, not the user.
     const base = Object.keys(ROOT_CONCEPT_FILES).find((file) => ROOT_CONCEPT_FILES[file] === type);
     if (base === undefined) throw new Error(`no home is defined for ${type}`);
     if (name) {

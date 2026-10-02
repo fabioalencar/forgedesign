@@ -27,6 +27,14 @@ export interface FreezeRecord {
   pin?: string;
   /** comment-API snapshot id; null until the snapshot is registered (T-009) */
   snapshotId: string | null;
+  /**
+   * `route → sha256:<hex>` of each built route's `index.html`, recorded at
+   * freeze (TASK-461, DDR-121). What "which screens changed" is derived from:
+   * a route whose hash differs from the previous freeze's changed. Optional
+   * because freezes cut before this carry none, and the comparison says so
+   * rather than guessing.
+   */
+  routes?: Record<string, string>;
 }
 
 export function freezesPath(repoRoot: string): string {

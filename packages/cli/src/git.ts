@@ -12,6 +12,22 @@ export async function git(repoRoot: string, args: string[]): Promise<string> {
   return stdout.trim();
 }
 
+/**
+ * A file exactly as it is at a ref — `git show <ref>:<path>`, bytes untouched.
+ *
+ * `git()` trims its output, which is right for a listing and wrong for a file
+ * that is about to be copied somewhere: a published snapshot of the record
+ * should be the bytes the tag holds, trailing newline included.
+ */
+export async function fileAtRef(repoRoot: string, ref: string, relPath: string): Promise<Buffer> {
+  const { stdout } = await execFileAsync("git", ["show", `${ref}:${relPath}`], {
+    cwd: repoRoot,
+    maxBuffer: 16 * 1024 * 1024,
+    encoding: "buffer",
+  });
+  return stdout;
+}
+
 /** Root of the repo containing `dir`, or null when outside any Git repo. */
 export async function repoRoot(dir: string): Promise<string | null> {
   try {

@@ -21,23 +21,32 @@ runs `forge doctor` against it on every push.
 
 ## Running it
 
-The packages are not on npm yet, so run the CLI from a clone:
+```sh
+npm install -g @forgedesign/cli
+forge --help
+```
+
+Node 20 or later. The command is `forge`; if Atlassian's `@forge/cli` is installed too, the
+two binaries share that name, so whichever was installed last answers.
+
+Point it at a project — including one that already has code:
+
+```sh
+forge init ../my-prototype
+forge skills install --home   # the agent skills, for Claude Code and Codex, in every project
+```
+
+That writes a `design/` bundle and a `forge.json`. `forge doctor` then checks the record
+against the format's rules: unique ids, references that resolve, valid statuses, and
+accepted decisions that have not been quietly edited.
+
+To work on the packages themselves, build from a clone:
 
 ```sh
 pnpm install
 pnpm -r build
 node packages/cli/dist/index.js --help
 ```
-
-Point it at a project — including one that already has code:
-
-```sh
-node packages/cli/dist/index.js init ../my-prototype
-```
-
-That writes a `design/` bundle and a `forge.json`. `forge doctor` then checks the record
-against the format's rules: unique ids, references that resolve, valid statuses, and
-accepted decisions that have not been quietly edited.
 
 ## The idea
 
@@ -61,7 +70,9 @@ stay consistent without anyone remembering to make them so.
 ## What is not here
 
 Publishing a frozen version to a URL a stakeholder can open, the PIN gate in front of it,
-and the comment service behind it are a separate commercial service.
+and the comment service behind it are a separate commercial service,
+[Forge Cloud](https://useforge.design). `forge login` and `forge publish` are how the CLI
+talks to it; nothing else in this repository needs it.
 
 The line is drawn at **serving, not capability**. Everything that produces a record is here
 and is Apache-2.0. A freeze is a portable directory of static files — you can host one

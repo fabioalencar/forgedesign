@@ -4,7 +4,7 @@ import { applyReview } from "../review.js";
 export function registerReviewCommand(program: Command): void {
   const review = program
     .command("review")
-    .description("the review skill's write path — rubric findings into design/feedback/");
+    .description("the forge-review skill's write path — rubric findings into design/feedback/");
 
   review
     .command("apply")

@@ -7,6 +7,8 @@ export interface ProjectFile {
   projectId?: string;
   preview?: PreviewConfig;
   build?: BuildConfig;
+  /** the checkers `forge check` runs beside doctor (DDR-127) */
+  checks?: CheckConfig[];
   /** Curated starter selected at initialization (DDR-024). */
   starter?: string;
 }
@@ -16,6 +18,19 @@ export interface ProjectFile {
  * scaffold convention (prototype/ with build + build-storybook scripts).
  * Commands are shell-like strings, split without invoking a shell.
  */
+/**
+ * One checker `forge check` runs (DDR-127): a command that prints a check
+ * report as JSON. Forge specifies the report and never the checker.
+ */
+export interface CheckConfig {
+  /** names the report file, `design/checks/<tag>/<name>.md` */
+  name: string;
+  /** shell-like; split the way `build.command` is */
+  command: string;
+  /** where it runs, relative to the repo root; defaults to "." */
+  dir?: string;
+}
+
 export interface BuildConfig {
   /** Where the commands run, relative to the repo root. Defaults to ".". */
   dir?: string;

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { conceptIdFromPath, isDerived, parseConcept, trustTier } from "../src/concepts.js";
+import {
+  audienceOf,
+  conceptIdFromPath,
+  decisionReach,
+  isDerived,
+  parseConcept,
+  trustTier,
+} from "../src/concepts.js";
 
 const problemKinds = (relPath: string, text: string): string[] =>
   parseConcept(relPath, text).problems.map((problem) => problem.kind);
@@ -124,6 +131,75 @@ describe("parseConcept", () => {
       parseConcept("glossary/design-record.md", "---\ntype: Term\n---\nA thing.\n").problems,
     ).toEqual([]);
     expect(parseConcept("todos.md", "---\ntype: Task Ledger\n---\n## Todo\n").problems).toEqual([]);
+  });
+
+  it("reads a decision's reach and treats absence as project (TASK-457)", () => {
+    const decision = (front = "") =>
+      parseConcept(
+        "decisions/DDR-050-slug.md",
+        `---\ntype: Decision\nid: DDR-050\ndecision_status: accepted\n${front}---\n`,
+      );
+    // Every decision written before the field existed keeps meaning what it meant.
+    expect(decision().problems).toEqual([]);
+    expect(decisionReach(decision())).toBe("project");
+
+    expect(decision("reach: general\n").problems).toEqual([]);
+    expect(decisionReach(decision("reach: general\n"))).toBe("general");
+
+    // A third word is a typo for one of the two, not a new category.
+    const typo = decision("reach: everywhere\n");
+    expect(typo.problems.map((p) => p.kind)).toEqual(["reach-invalid"]);
+    expect(typo.problems[0]?.message).toContain("project | general");
+  });
+
+  it("holds a check report to checks/<tag>/, one level down (DDR-127)", () => {
+    const check = "---\ntype: Check\ntitle: doctor on v1\n---\n";
+    expect(parseConcept("checks/v1/doctor.md", check).problems).toEqual([]);
+    expect(problemKinds("checks/doctor.md", check)).toContain("type-mismatched-directory");
+    expect(problemKinds("checks/v1/deep/doctor.md", check)).toContain("type-mismatched-directory");
+    expect(parseConcept("checks/doctor.md", check).problems[0]?.message).toContain("checks/<tag>/");
+  });
+
+  it("answers who may see a concept: the file's word, else the type's default (DDR-128)", () => {
+    expect(audienceOf(parseConcept("brief.md", "---\ntype: Brief\n---\n"))).toBe("stakeholders");
+    expect(
+      audienceOf(parseConcept("flows/FLOW-001.md", "---\ntype: Flow\nid: FLOW-001\n---\n")),
+    ).toBe("stakeholders");
+    // A decision carries the alternatives it beat, so it stays with the creator until flipped.
+    const decision = (front = "") =>
+      parseConcept(
+        "decisions/DDR-050-slug.md",
+        `---\ntype: Decision\nid: DDR-050\ndecision_status: accepted\n${front}---\n`,
+      );
+    expect(audienceOf(decision())).toBe("owner");
+    expect(audienceOf(decision("audience: stakeholders\n"))).toBe("stakeholders");
+    expect(decision("audience: stakeholders\n").problems).toEqual([]);
+    expect(audienceOf(parseConcept("todos.md", "---\ntype: Task Ledger\n---\n## Todo\n"))).toBe(
+      "owner",
+    );
+    expect(
+      audienceOf(
+        parseConcept(
+          "feedback/FEEDBACK-001.md",
+          "---\ntype: Feedback\nid: FEEDBACK-001\nfeedback_status: pending\n---\n",
+        ),
+      ),
+    ).toBe("owner");
+    // A type the profile does not know leaks nothing.
+    expect(audienceOf(parseConcept("x.md", "---\ntype: Mystery\n---\n"))).toBe("owner");
+
+    const typo = decision("audience: everyone\n");
+    expect(typo.problems.map((p) => p.kind)).toEqual(["audience-invalid"]);
+    expect(typo.problems[0]?.message).toContain("owner | stakeholders");
+  });
+
+  it("leaves `reach` alone on types that are not decisions", () => {
+    // The profile preserves keys it does not name; `reach` is only a decision's
+    // enum, so a term carrying the word is not a decision with a typo.
+    expect(
+      parseConcept("glossary/design-record.md", "---\ntype: Term\nreach: far\n---\nA thing.\n")
+        .problems,
+    ).toEqual([]);
   });
 
   it("reads an unquoted date as a day, not a timestamp", () => {

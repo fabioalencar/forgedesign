@@ -69,7 +69,7 @@ async function freezeWith(tag: string, done: string[]): Promise<void> {
   git("tag", "-a", tag, "-m", tag);
 }
 
-const freeze = (tag: string, date: string): FreezeRecord => ({
+const freeze = (tag: string, date: string, routes?: Record<string, string>): FreezeRecord => ({
   tag,
   date,
   commit: "x",
@@ -77,6 +77,7 @@ const freeze = (tag: string, date: string): FreezeRecord => ({
   storybookUrl: null,
   pin: "1",
   snapshotId: null,
+  ...(routes ? { routes } : {}),
 });
 
 describe("the feature log (T-238)", () => {
@@ -154,6 +155,158 @@ describe("the feature log (T-238)", () => {
     ]);
 
     expect(result.warnings.join(" ")).toContain("no task ledger at later");
+  });
+});
+
+describe("which screens changed (TASK-461)", () => {
+  it("lists the routes that changed between two hashed freezes, with the feedback each addressed", async () => {
+    await freezeWith("alpha", ["TASK-001 One"]);
+    await fs.mkdir(path.join(root, "design", "feedback"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "design", "feedback", "FEEDBACK-001.md"),
+      "---\ntype: Feedback\nid: FEEDBACK-001\ntitle: The rules should show first\ndate: 2026-07-10\nfeedback_status: done\nsource: review\nresolution: TASK-002\nroute: /register/\naddressed_in: beta\n---\n> The rules should show first\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(root, "design", "feedback", "FEEDBACK-002.md"),
+      "---\ntype: Feedback\nid: FEEDBACK-002\ntitle: A remark with no screen\ndate: 2026-07-10\nfeedback_status: done\nsource: meeting\nresolution: TASK-002\naddressed_in: beta\n---\n> A remark with no screen\n",
+      "utf8",
+    );
+    await freezeWith("beta", ["TASK-001 One", "TASK-002 Two"]);
+
+    const result = await generateFeatureLog(root, [
+      freeze("alpha", "2026-07-01", { "/": "a1", "/register": "b1", "/old": "c" }),
+      freeze("beta", "2026-07-15", { "/": "a1", "/register": "b2", "/welcome": "d" }),
+    ]);
+
+    const [beta, alpha] = result.freezes;
+    expect(beta?.screens).toEqual({
+      kind: "compared",
+      previousTag: "alpha",
+      screens: [
+        { route: "/", status: "unchanged" },
+        { route: "/old", status: "removed" },
+        { route: "/register", status: "changed" },
+        { route: "/welcome", status: "new" },
+      ],
+    });
+    // The reviewer's `/register/` meets the build's `/register`.
+    expect(beta?.addressed).toEqual([
+      { id: "FEEDBACK-001", title: "The rules should show first", route: "/register" },
+      { id: "FEEDBACK-002", title: "A remark with no screen", route: null },
+    ]);
+    expect(alpha?.screens.kind).toBe("first");
+
+    const text = await fs.readFile(path.join(root, "design", "feature-log.md"), "utf8");
+    const betaSection = text.slice(text.indexOf("## beta"), text.indexOf("## alpha"));
+    expect(betaSection).toContain("### Screens");
+    expect(betaSection).toContain("- `/register` changed — addresses FEEDBACK-001");
+    expect(betaSection).toContain("- `/welcome` new");
+    expect(betaSection).toContain("- `/old` removed");
+    expect(betaSection).not.toContain("`/` unchanged");
+    expect(betaSection).toContain("- also addresses FEEDBACK-002");
+    expect(text.slice(text.indexOf("## alpha"))).toContain("First freeze — every screen is new.");
+  });
+
+  it("adds the manifest's declared intent beside the derived status, read at the tag (TASK-468)", async () => {
+    await freezeWith("alpha", ["TASK-001 One"]);
+    await fs.mkdir(path.join(root, "design", "feedback"), { recursive: true });
+    await fs.writeFile(
+      path.join(root, "design", "feedback", "FEEDBACK-001.md"),
+      "---\ntype: Feedback\nid: FEEDBACK-001\ntitle: Show the rules first\ndate: 2026-07-10\nfeedback_status: done\nsource: review\nresolution: TASK-002\nroute: /register\naddressed_in: beta\n---\n> Show the rules first\n",
+      "utf8",
+    );
+    // `/register/` in the manifest is the build's `/register`, as it is for feedback.
+    await fs.writeFile(
+      path.join(root, "design", "pages.md"),
+      "---\ntype: Page Manifest\ntitle: Pages\n---\n- / · Home — FLOW-001\n- /register/ · Sign up — STORY-002, TASK-002\n",
+      "utf8",
+    );
+    await freezeWith("beta", ["TASK-001 One", "TASK-002 Two"]);
+
+    const result = await generateFeatureLog(root, [
+      freeze("alpha", "2026-07-01", { "/": "a1", "/register": "b1" }),
+      freeze("beta", "2026-07-15", { "/": "a1", "/register": "b2", "/welcome": "d" }),
+    ]);
+
+    const [beta, alpha] = result.freezes;
+    expect(beta?.pages).toEqual({
+      "/": { title: "Home", refs: ["FLOW-001"] },
+      "/register": { title: "Sign up", refs: ["STORY-002", "TASK-002"] },
+    });
+    // The manifest did not exist at alpha, so alpha's section carries none of it.
+    expect(alpha?.pages).toEqual({});
+
+    const text = await fs.readFile(path.join(root, "design", "feature-log.md"), "utf8");
+    const betaSection = text.slice(text.indexOf("## beta"), text.indexOf("## alpha"));
+    // Derived status, then declared intent, then the feedback — in that order.
+    expect(betaSection).toContain(
+      "- `/register` changed — Sign up (STORY-002, TASK-002) — addresses FEEDBACK-001",
+    );
+    // A route with no row reads exactly as it did before.
+    expect(betaSection).toContain("- `/welcome` new\n");
+    expect(text.slice(text.indexOf("## alpha"))).toContain("- `/register` new\n");
+  });
+
+  it("says what it cannot compare, rather than guessing, when a freeze recorded no hashes", async () => {
+    await freezeWith("alpha", ["TASK-001 One"]);
+    await freezeWith("beta", ["TASK-001 One"]);
+    await freezeWith("gamma", ["TASK-001 One"]);
+
+    const result = await generateFeatureLog(root, [
+      freeze("alpha", "2026-07-01"),
+      freeze("beta", "2026-07-15", { "/": "a" }),
+      freeze("gamma", "2026-07-20", { "/": "a" }),
+    ]);
+    const text = await fs.readFile(path.join(root, "design", "feature-log.md"), "utf8");
+
+    expect(result.freezes.map((f) => f.screens.kind)).toEqual([
+      "compared",
+      "baseline-unrecorded",
+      "unrecorded",
+    ]);
+    expect(text).toContain("No screen changed since beta.");
+    expect(text).toContain("alpha recorded no route hashes");
+    expect(text).toContain("Route hashes were not recorded for this freeze");
+  });
+
+  it("lists the decisions that reached accepted between the tags, once", async () => {
+    await freezeWith("alpha", []);
+    const decisions = path.join(root, "design", "decisions");
+    const ddr = (id: string, status: string, extra = "") =>
+      `---\ntype: Decision\nid: ${id}\ntitle: ${id} says so\ndate: 2026-07-10\ndecision_status: ${status}\n${extra}---\n## Decision\n\nX.\n`;
+    await fs.writeFile(
+      path.join(decisions, "DDR-001-first.md"),
+      ddr("DDR-001", "accepted"),
+      "utf8",
+    );
+    await fs.writeFile(path.join(decisions, "DDR-002-second.md"), ddr("DDR-002", "draft"), "utf8");
+    await freezeWith("beta", []);
+    // DDR-001 only gains a back-reference here; DDR-002 is the one accepted now.
+    await fs.writeFile(
+      path.join(decisions, "DDR-001-first.md"),
+      ddr("DDR-001", "accepted", "amended_by: [DDR-002]\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(decisions, "DDR-002-second.md"),
+      ddr("DDR-002", "accepted", "amends: [DDR-001]\n"),
+      "utf8",
+    );
+    await freezeWith("gamma", []);
+
+    const result = await generateFeatureLog(root, [
+      freeze("alpha", "2026-07-01"),
+      freeze("beta", "2026-07-15"),
+      freeze("gamma", "2026-07-20"),
+    ]);
+
+    const byTag = Object.fromEntries(
+      result.freezes.map((f) => [f.tag, f.accepted.map((d) => d.id)]),
+    );
+    expect(byTag).toEqual({ alpha: [], beta: ["DDR-001"], gamma: ["DDR-002"] });
+    const text = await fs.readFile(path.join(root, "design", "feature-log.md"), "utf8");
+    expect(text).toContain("### Decisions accepted\n\n- DDR-002 DDR-002 says so");
   });
 });
 

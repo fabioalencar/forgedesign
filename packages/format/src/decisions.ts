@@ -38,6 +38,20 @@ export interface DdrDocument {
   raw: string;
 }
 
+/**
+ * The `## Decision` section of a decision body — the one paragraph a reader
+ * wants first. Everything under the heading up to the next `##`; the paragraph
+ * is usually hard-wrapped, so it runs over several lines, not one. Shared by
+ * the hub and the handoff pack so they cannot disagree about what it is.
+ */
+export function decisionParagraph(body: string): string {
+  const start = body.search(/^##\s+Decision\s*$/m);
+  if (start < 0) return "";
+  const under = body.slice(start).replace(/^##[^\n]*\n?/, "");
+  const next = under.search(/^##\s/m);
+  return (next < 0 ? under : under.slice(0, next)).trim();
+}
+
 export function parseDecision(text: string): DdrDocument {
   const lines = text.split("\n");
   let id: string | null = null;

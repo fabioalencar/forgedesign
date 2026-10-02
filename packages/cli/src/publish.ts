@@ -1,12 +1,25 @@
-// `forge publish` — send a frozen build to Cloud (DDR-073, DDR-076).
+// `forge publish` — send a frozen build to Cloud (DDR-073, DDR-076), and beside
+// it the part of the record stakeholders may see (DDR-129).
 //
-// Only the artifact travels: Cloud hosts what freeze produced and adds the
-// review toolbar at serve time, so nothing here injects anything.
+// Two things travel and nothing is injected. The build is what freeze produced,
+// byte for byte; Cloud adds the review toolbar at serve time. The record is a
+// snapshot the creator chose: every concept whose `audience` is stakeholders
+// (DDR-128), read from the tag rather than the working tree, so what Cloud holds
+// is what was frozen and not what the repo has moved on to. The repository
+// itself stays home.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import {
+  audienceOf,
+  buildBundleIndex,
+  isReservedFilename,
+  type ParsedConcept,
+  parseConcept,
+} from "@forgedesign/format";
 import { cloudApiUrl } from "./cloud-auth.js";
 import { readUserConfig } from "./config.js";
+import { fileAtRef, git } from "./git.js";
 
 /** Content types the review runtime needs to serve a static prototype correctly. */
 const CONTENT_TYPES: Record<string, string> = {
@@ -108,6 +121,90 @@ export async function collectBuild(buildDir: string): Promise<PublishFile[]> {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+const MARKDOWN = "text/markdown; charset=utf-8";
+/** The scaffold's example decision, never a decision of this project. */
+const TEMPLATE_DECISION_ID = "DDR-000";
+
+/** The record as it crosses: what goes, and a count of what stayed for the message. */
+export interface RecordSnapshot {
+  /** `index.md` regenerated over what crossed, then every concept that did — bundle-relative */
+  files: PublishFile[];
+  /** concepts whose audience is stakeholders */
+  kept: number;
+  /** concepts at the tag that stayed home, because their audience is the owner */
+  withheld: number;
+}
+
+const EMPTY_SNAPSHOT: RecordSnapshot = { files: [], kept: 0, withheld: 0 };
+
+/**
+ * The record at a tag, filtered to what stakeholders may see (DDR-128, DDR-129).
+ *
+ * **Read from the tag, not the working tree.** A freeze is published after it
+ * was cut, sometimes long after, and the record keeps moving in between. The
+ * snapshot Cloud holds beside `v4`'s build must be the record as it stood at
+ * `v4` — the same rule the handoff pack and the feature log already follow — or
+ * a stakeholder reads a brief the frozen screens were never built to.
+ *
+ * **Filtered here, before anything leaves the machine.** `audienceOf` is the one
+ * reader of the field, and this is the boundary DDR-128 exists for: a concept
+ * that is the owner's never crosses, so nothing downstream — the answering AI,
+ * the gate, a feedback page — has to remember to hide it. The bundle's own
+ * `index.md` is not sent, because it names every concept including the ones
+ * that stayed; one is regenerated over what crossed, so what arrives is still a
+ * bundle a consumer can scan. `log.md` stays for the same reason.
+ *
+ * A tag with no record beneath it — a v0.1 repo, or one from before the record
+ * existed — yields an empty snapshot rather than an error: the build still
+ * publishes as it always did.
+ */
+export async function collectRecord(
+  root: string,
+  tag: string,
+  recordRoot: string,
+): Promise<RecordSnapshot> {
+  let listing: string;
+  try {
+    listing = await git(root, ["ls-tree", "-r", "--name-only", tag, "--", recordRoot]);
+  } catch {
+    return EMPTY_SNAPSHOT;
+  }
+  const prefix = `${recordRoot.replace(/\/+$/, "")}/`;
+  const paths = listing
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(prefix) && line.endsWith(".md"))
+    .sort();
+
+  const kept: Array<{ concept: ParsedConcept; bytes: Buffer }> = [];
+  let withheld = 0;
+  for (const repoPath of paths) {
+    const rel = repoPath.slice(prefix.length);
+    if (isReservedFilename(path.posix.basename(rel))) continue;
+    const bytes = await fileAtRef(root, tag, repoPath);
+    const concept = parseConcept(rel, bytes.toString("utf8"));
+    if (concept.id === TEMPLATE_DECISION_ID) continue;
+    if (audienceOf(concept) !== "stakeholders") {
+      withheld += 1;
+      continue;
+    }
+    kept.push({ concept, bytes });
+  }
+  if (kept.length === 0) return { ...EMPTY_SNAPSHOT, withheld };
+
+  const index: PublishFile = {
+    path: "index.md",
+    content: Buffer.from(buildBundleIndex(kept.map((entry) => entry.concept))).toString("base64"),
+    contentType: MARKDOWN,
+  };
+  const files = kept.map(({ concept, bytes }) => ({
+    path: concept.relPath,
+    content: bytes.toString("base64"),
+    contentType: MARKDOWN,
+  }));
+  return { files: [index, ...files], kept: kept.length, withheld };
+}
+
 export interface PublishResult {
   url: string;
   /**
@@ -135,6 +232,12 @@ export interface PublishResult {
    */
   pin?: string;
   freezesUsed: number;
+  /**
+   * How many record files Cloud stored beside the build (DDR-129), the
+   * regenerated index included. Absent from a service that predates the
+   * crossing — which ignores the field and hosts the build as before.
+   */
+  recordFileCount?: number;
 }
 
 export interface PublishRefusal {
@@ -151,6 +254,8 @@ export async function publishBuild(input: {
   tag: string;
   /** publish even when the service thinks the build carries a secret (TASK-366) */
   force?: boolean;
+  /** the record as `collectRecord` filtered it; omitted when the repo has none */
+  record?: RecordSnapshot;
 }): Promise<{ ok: true; result: PublishResult } | { ok: false; refusal: PublishRefusal }> {
   const config = await readUserConfig();
   if (!config.cloudToken) {
@@ -184,6 +289,9 @@ export async function publishBuild(input: {
       tag: input.tag,
       force: input.force === true ? true : undefined,
       files,
+      // Beside the build, never inside it: the service keeps the two apart so
+      // nothing in the record is ever served as an artifact (DDR-129).
+      record: input.record && input.record.files.length > 0 ? input.record.files : undefined,
     }),
   });
 

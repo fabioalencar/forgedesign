@@ -6,7 +6,7 @@ import { initProject } from "../src/commands/init.js";
 import { runDoctor } from "../src/doctor.js";
 import { applyReview, reviewStagePath } from "../src/review.js";
 
-// `forge review apply` — the write side of the `review` skill (DDR-108,
+// `forge review apply` — the write side of the `forge-review` skill (DDR-108,
 // DDR-112).
 //
 // What is worth pinning here is the refusals. A scan writes into the record

@@ -4,7 +4,7 @@ import { applyDdr } from "../ddr.js";
 export function registerDdrCommand(program: Command): void {
   const ddr = program
     .command("ddr")
-    .description("decisions/ (spec/format.md) — the ddr skill's write path");
+    .description("decisions/ (spec/format.md) — the forge-ddr skill's write path");
 
   ddr
     .command("apply")

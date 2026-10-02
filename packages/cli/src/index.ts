@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { registerAddCommand } from "./commands/add.js";
 import { registerAdoptCommand } from "./commands/adopt.js";
+import { registerCheckCommand } from "./commands/check.js";
 import { registerCommentsCommand } from "./commands/comments.js";
 import { registerDashCommand } from "./commands/dash.js";
 import { registerDdrCommand } from "./commands/ddr.js";
@@ -33,6 +34,7 @@ program
 
 registerInitCommand(program);
 registerDoctorCommand(program);
+registerCheckCommand(program);
 registerIndexCommand(program);
 registerUpgradeCommand(program);
 registerCloudAuthCommands(program);

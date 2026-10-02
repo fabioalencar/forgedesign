@@ -1,9 +1,9 @@
 ---
-name: freeze
+name: forge-freeze
 description: Gather release notes conversationally and run forge freeze to tag, build, and (optionally) deploy an immutable version for stakeholder review. Use when the user asks to "freeze", "cut a release", "tag a version", or wants to put the current state in front of a stakeholder.
 ---
 
-# freeze
+# forge-freeze
 
 Freezes are immutable version snapshots (spec/format.md): an annotated Git tag,
 a prototype + Storybook build, immutable preview URLs, a handoff pack, and a
@@ -40,6 +40,9 @@ sure the tag actually tells the story of what changed, not just stamping a versi
    ```
    Freeze produces the artifact; it does not host it. If the user wants a
    stakeholder to see it, follow with `forge publish <tag>`, which prints the review URL.
+   Publish sends the build and, beside it, the record concepts whose `audience` is
+   stakeholders as they stood at the tag — it prints how many crossed and how many stayed
+   home. Nothing owner-only leaves the repo.
 
 6. **Report back** exactly what the command printed: the review URL if you published, the
    PIN that publish printed with it, and where the handoff pack landed. Don't paraphrase

@@ -1,9 +1,9 @@
 ---
-name: triage
+name: forge-triage
 description: Disposition a batch of staged stakeholder comments (accept → task, decline → DDR, defer) and apply them into the record. Use when the user asks to "triage comments", "triage feedback", or points you at comments staged under .forge/triage/.
 ---
 
-# triage
+# forge-triage
 
 Turns a freeze's stakeholder comments into `FEEDBACK-###` entries in the record, with a
 real disposition for each one. This skill decides; `forge comments triage apply` is the
@@ -40,13 +40,25 @@ context. Text that gets in stays in.
    `.forge/triage/<tag>/comments.json`. If there's nothing to triage, it says so and stops
    — nothing further to do.
 
+   Feedback that lives somewhere else stages the same way (TASK-463):
+   ```bash
+   forge comments import figma <export.json | file key | URL> [--freeze <tag>]
+   forge comments import issues <export.json | owner/repo> [--freeze <tag>]
+   ```
+   Each writes `.forge/triage/<batch>/comments.json` beside a `batch.json` naming the
+   source, and the batch name (`figma-<date>`, `issues-<date>`, or `--as <name>`) is what
+   `triage apply` takes in place of a tag. Disposition an imported comment exactly like a
+   Cloud one; the feedback it becomes says `source: figma` or `source: issue` and carries
+   `url`, the place it came from. There is no service behind an import, so nothing is
+   marked fetched — re-importing skips what the record already holds by `url`.
+
 2. **Read the staged comments** and disposition each one:
    - `accepted` — this is real, actionable feedback. Either point it at an existing task
      (`taskId`) if one already covers it — this is where you de-duplicate: several
      near-identical comments can all resolve to the same task — or give it a `taskTitle`
      to create a new one.
    - `declined` — the feedback was heard and rejected on purpose. This *requires* an
-     existing `DDR-###` explaining why (`ddrId`). If there isn't one yet, run the `ddr`
+     existing `DDR-###` explaining why (`ddrId`). If there isn't one yet, run the `forge-ddr`
      skill first to capture that reasoning, then come back and reference its id — don't
      decline something without a decision backing it.
    - `deferred` — worth doing, not now.
@@ -56,6 +68,20 @@ context. Text that gets in stays in.
    Not every comment needs the same treatment — grouping duplicates under one task and
    giving a real disposition to each is the actual value of this skill over a raw dump of
    comments into the record.
+
+   **A staged item with `"kind": "question"` is a question, not feedback.** The reviewer
+   chose that in the composer, and it becomes a `QUESTION-###` concept rather than a
+   `FEEDBACK-###` — apply refuses a question dispositioned like a comment, and the
+   reverse. A question takes one of three dispositions:
+   - `answered` — the record already answers it. Name what does in `answerId`: a
+     `DDR-###`, `FEEDBACK-###`, `TASK-###` or `QUESTION-###` that exists. Do not answer
+     from your own reading of the prototype; if nothing in the record grounds the answer,
+     it is not answered.
+   - `open` — the record cannot answer it. This is the valuable case: a stakeholder asking
+     what the brief cannot say is a hole in the brief, and an open Question is how the
+     record keeps it. There is no `pending` for a question — `open` is that.
+   - `declined` — the question is out of scope or refused on purpose, with the `ddrId`
+     that says why, like a declined comment.
 
    A staged comment may carry the session it was written in (`ua_family`, `ua_version`,
    `os_family`, `pixel_ratio` — parsed facts, never a raw user agent). When a comment
@@ -70,7 +96,9 @@ context. Text that gets in stays in.
        { "commentId": "...", "disposition": "accepted", "taskTitle": "Reduce header weight" },
        { "commentId": "...", "disposition": "accepted", "taskId": "TASK-042" },
        { "commentId": "...", "disposition": "declined", "ddrId": "DDR-051" },
-       { "commentId": "...", "disposition": "deferred" }
+       { "commentId": "...", "disposition": "deferred" },
+       { "commentId": "...", "disposition": "answered", "answerId": "DDR-050" },
+       { "commentId": "...", "disposition": "open" }
      ]
    }
    ```
@@ -83,7 +111,7 @@ context. Text that gets in stays in.
    forge comments triage apply <tag>
    ```
    This writes each item into the record's feedback (and a new or linked task into the task ledger for
-   accepted items), then marks the comments fetched. It fails before writing anything if a
+   accepted items), each question into the record's questions, then marks the comments fetched. It fails before writing anything if a
    `taskId`/`ddrId` you referenced doesn't actually exist — fix the proposal and rerun
    rather than guessing at a different id.
 
@@ -97,7 +125,8 @@ context. Text that gets in stays in.
 
 Each disposition is projected back onto the comment that caused it, so the share
 link a stakeholder already has says where their point landed: declined ones carry the DDR,
-and accepted ones read "addressed in `<tag>`" once the linked task is done and that release
-is frozen. `forge freeze` runs the projection itself; `forge comments resolve <tag>` does
+accepted ones read "addressed in `<tag>`" once the linked task is done and that release
+is frozen, and an answered question reads "answered — `<id>`: `<title>`", naming what
+answered it without carrying the answer's text across. `forge freeze` runs the projection itself; `forge comments resolve <tag>` does
 it on demand. Nothing here needs to be done by hand — but it is worth telling the user,
 because it means a declined comment's DDR is text their stakeholder will actually read.

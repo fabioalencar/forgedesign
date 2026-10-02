@@ -71,6 +71,24 @@ describe("applyDdr", () => {
     expect(text).toContain("## Why\n\nBecause Y.");
     expect(text).not.toContain("## Alternatives rejected");
     expect(text).not.toContain("## Consequences");
+    // Absent from the staging means absent from the file — the reader defaults it.
+    expect(text).not.toContain("reach:");
+  });
+
+  it("writes the staged reach and refuses one outside the enum (TASK-457)", async () => {
+    const base = { title: "x", contextSource: "x", decision: "x", why: "x" };
+    await stage("house-rule", { ...base, reach: "general", audience: "stakeholders" });
+    const result = await applyDdr(root, "house-rule");
+    const text = await fs.readFile(path.join(root, result.path), "utf8");
+    expect(text).toContain("reach: general");
+    // And who may see it (DDR-128), written only when staged — absent is the creator's.
+    expect(text).toContain("audience: stakeholders");
+    expect((await runDoctor(root)).exitCode).toBe(0);
+    await stage("bad-audience", { ...base, audience: "everyone" });
+    await expect(applyDdr(root, "bad-audience")).rejects.toThrow(/audience must be one of/);
+
+    await stage("bad-reach", { ...base, reach: "everywhere" });
+    await expect(applyDdr(root, "bad-reach")).rejects.toThrow(/reach must be one of/);
   });
 
   it("allocates the next id after existing decisions, and includes optional sections when provided", async () => {

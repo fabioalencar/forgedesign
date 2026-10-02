@@ -4,7 +4,7 @@ import { forgeHome } from "./registry.js";
 
 /** Per-user settings in ~/.forge/config.json (FORGE_HOME-overridable). */
 export interface UserConfig {
-  /** base URL of the deployed comment API, e.g. https://forge-comments.vercel.app */
+  /** a self-hosted comment API's base URL — operators only; creators use `forge login` (DDR-104) */
   commentsApiUrl?: string;
   /** the COMMENTS_API_KEY configured on that deployment (DDR-009) */
   commentsApiKey?: string;

@@ -8,7 +8,7 @@ export function registerIntakeCommand(program: Command): void {
 
   intake
     .argument("<file>", "local transcript, summary, VTT, SRT, or plain-text source")
-    .option("--prompt <prompt>", "optional instruction for the agent session's intake skill")
+    .option("--prompt <prompt>", "optional instruction for the agent session's forge-intake skill")
     .description("stage a context source under .forge/intake for classification (propose-only)")
     .action(async (file: string, options: { prompt?: string }) => {
       const sourcePath = path.resolve(file);
@@ -21,7 +21,7 @@ export function registerIntakeCommand(program: Command): void {
       console.log(`Staged ${staged.sourceName} at .forge/intake/${staged.id}.`);
       for (const warning of staged.warnings) console.log(`warning: ${warning.message}`);
       console.log(
-        "Classify it with the intake skill in your agent session, then run " +
+        "Classify it with the forge-intake skill in your agent session, then run " +
           `\`forge intake apply ${staged.id}\`${staged.needsConfirmation ? " --confirm" : ""}.`,
       );
     });

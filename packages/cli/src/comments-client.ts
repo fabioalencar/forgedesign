@@ -10,6 +10,44 @@ export interface CommentsApiConfig {
   apiKey: string;
 }
 
+/**
+ * Where `forge comments` talks, and which credential it uses (DDR-104, TASK-420).
+ *
+ * **Cloud first, because the direct path was never a customer path.**
+ * `commentsApiKey` is one deployment-wide secret that authorises every tenant's
+ * comments, so a customer could not be given one — which is why every
+ * `forge comments` subcommand used to refuse with an instruction no Cloud creator
+ * could follow. Going through the control plane uses the `cloudToken` they
+ * already have from `forge login`, and the control plane decides ownership,
+ * because it is the only plane that knows who owns what.
+ *
+ * The base URL is the review plane's own paths under `/api/cli`, so nothing in
+ * this file changes — only where it points and what it presents.
+ *
+ * **The direct config survives as an operator and self-host escape hatch**, which
+ * is exactly what DDR-104 left it as. It is checked second so that a machine
+ * holding both — an operator's, typically — takes the path a customer would,
+ * and any breakage shows up on the path that matters rather than hiding behind
+ * a credential nobody else has.
+ */
+export function commentsApiFor(userConfig: {
+  cloudApiUrl?: string;
+  cloudToken?: string;
+  commentsApiUrl?: string;
+  commentsApiKey?: string;
+}): CommentsApiConfig {
+  if (userConfig.cloudToken) {
+    const origin = (userConfig.cloudApiUrl ?? "https://useforge.design").replace(/\/$/, "");
+    return { apiUrl: `${origin}/api/cli`, apiKey: userConfig.cloudToken };
+  }
+  if (userConfig.commentsApiUrl && userConfig.commentsApiKey) {
+    return { apiUrl: userConfig.commentsApiUrl, apiKey: userConfig.commentsApiKey };
+  }
+  throw new Error(
+    "not signed in — run `forge login`. (Self-hosting? Set commentsApiUrl and commentsApiKey in ~/.forge/config.json.)",
+  );
+}
+
 function url(config: CommentsApiConfig, pathname: string): string {
   return `${config.apiUrl.replace(/\/$/, "")}${pathname}`;
 }
@@ -47,6 +85,18 @@ export interface ApiComment {
   parent_id: string | null;
   author_label: string;
   body: string;
+  /**
+   * A comment asks for a change; a question asks for an answer (TASK-462).
+   * Absent from a service that predates the distinction, which reads as
+   * `comment` — what every one of them was. Triage files the two differently.
+   */
+  kind?: "comment" | "question";
+  /**
+   * Where the comment lives at its source, for an imported batch (TASK-463):
+   * the Figma comment, the GitHub issue. Cloud comments carry none — the
+   * service is the source and `id` is the link back.
+   */
+  url?: string | null;
   route: string | null;
   selector: string | null;
   viewport_w: number | null;
@@ -194,12 +244,12 @@ export async function projectUnfetchedCount(
   repoRoot: string,
   timeoutMs = 1500,
 ): Promise<UnfetchedCount> {
-  const userConfig = await readUserConfig();
-  if (!userConfig.commentsApiUrl || !userConfig.commentsApiKey) return { kind: "not-configured" };
-  const config: CommentsApiConfig = {
-    apiUrl: userConfig.commentsApiUrl,
-    apiKey: userConfig.commentsApiKey,
-  };
+  let config: CommentsApiConfig;
+  try {
+    config = commentsApiFor(await readUserConfig());
+  } catch {
+    return { kind: "not-configured" };
+  }
   const snapshotIds = (await readFreezes(repoRoot))
     .map((f) => f.snapshotId)
     .filter((id): id is string => Boolean(id));

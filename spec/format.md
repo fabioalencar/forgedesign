@@ -47,6 +47,13 @@ carry frontmatter, and a real project repo always has a `README.md`, a `CHANGELO
 an `AGENTS.md` that will not. The bundle is therefore also a clean unit to tar, publish, or
 hand to an agent on its own.
 
+**What crosses at publish** (DDR-129). `forge publish <tag>` sends two things beside each
+other: the frozen build, and a snapshot of this bundle filtered to the concepts whose
+`audience` is `stakeholders` (§3), read from the tag rather than the working tree.
+`index.md` is regenerated over what crossed; `log.md`, the template decision and every
+owner-only concept stay home. The snapshot is a private blob the review runtime alone
+reads. It is a copy the creator chose, at a version — the repository remains the record.
+
 ```
 design/
   index.md                     OKF index; the only file carrying okf_version
@@ -57,6 +64,7 @@ design/
   data-model.md                type: Data Model
   design-system.md             type: Design System
   components.md                type: Component Inventory
+  pages.md                     type: Page Manifest        (optional)
   feature-log.md               type: Feature Log          (generated)
   decisions/DDR-###-slug.md    type: Decision             DDR-###
   feedback/FEEDBACK-###.md     type: Feedback             FEEDBACK-###
@@ -67,6 +75,7 @@ design/
   glossary/<term-slug>.md      type: Term
   flows/FLOW-###.md            type: Flow                 FLOW-###
   scenarios/SCENARIO-###.md    type: Scenario             SCENARIO-###
+  checks/<tag>/<checker>.md    type: Check                (generated)
 ```
 
 | Path | Purpose | Created |
@@ -87,13 +96,17 @@ design/
 | `design/calendar.md` | Deadlines, checkpoints, timeline; references decisions and freezes by ID | on demand (`forge add`) |
 | `design/design-system.md` | Design tokens and brand direction; links `components.md` | on demand (`forge add`) |
 | `design/components.md` | Component inventory | on demand (`forge add`) |
+| `design/pages.md` | Which pages the prototype has: a route, a title, and the flows and stories that touch it — declared intent beside the derived Screens section (DDR-130) | on demand (`forge add`) |
 | `design/feature-log.md` | Features closed per freeze | **generated** (at freeze) |
+| `design/checks/` | One report per checker per version — what a checker found, at which commit (DDR-127) | **generated** (`forge check`) |
 
 **Outside the bundle**, at the repo root: `forge.json` (project manifest, carries
 `formatVersion`, `recordRoot`, and the `build` block — `{ "command", "output", "dir"?,
 "storybook"? }` — that tells `forge freeze` how this project builds and where the build
-lands), `freezes.json` (machine-readable freeze registry,
-`FREEZE-###`), `datasets/`, `tokens/tokens.json` (DTCG). These are the executable layer —
+lands, and `checks`, the checkers `forge check` runs — DDR-127), `freezes.json`
+(machine-readable freeze registry, `FREEZE-###`; each entry carries
+`routes`, the content hash of every built route, from which the feature log derives which
+screens changed — DDR-121), `datasets/`, `tokens/tokens.json` (DTCG). These are the executable layer —
 machine contracts, not knowledge concepts — and OKF constrains only `.md` files. Scenarios
 are *not* among them: a scenario is authored as a concept and its runtime JSON is emitted
 at build time (DDR-063).
@@ -147,6 +160,13 @@ generated: { by: forge-cli/0.2.0, at: 2026-07-18T10:12:00Z }   # derived files o
 - `title`, `description` — OKF-recommended. `description` is what an `index.md` generator
   and the renderer's list views show.
 - `date` — when the concept came into being (a decision's date, a feedback's arrival).
+- `audience` — who may see this concept once the record is published: `owner` or
+  `stakeholders` (DDR-128). Optional, with a default per type: `stakeholders` for the brief,
+  flows, the data model, design system, component inventory, glossary, stories, roles,
+  scenarios, calendar, questions and the page manifest; `owner` for the task ledger, stakeholders, feedback,
+  decisions, the feature log and check reports. A decision is owner-only until the creator
+  flips it, because it carries the alternatives it beat. Doctor checks the value; nothing
+  owner-only crosses at publish, and the release hub renders only what stakeholders may see.
 - `sources` — OKF provenance: what this concept derives from. Replaces v0.1's `source:`
   convention; each entry carries a `resource` (a bundle-relative path or a URL).
 - `generated` — `{ by, at }` per OKF's actor convention. **Its presence is what makes a
@@ -232,10 +252,12 @@ resolution: TASK-042
 > The enterprise column reads like an afterthought.
 ```
 
-Sources: `meeting | email | chat | review | scan` (`review` = comment on a hosted freeze,
-which also carries `freeze: FREEZE-003`; `scan` = automated check finding). `resolution`
-links the outcome: `accepted` links the resulting `TASK-###`; `declined` links the
-`DDR-###` recording why (declining feedback is a decision); `done` means the linked work
+Sources: `meeting | email | chat | review | scan | figma | issue` (`review` = comment on a
+hosted freeze, which also carries `freeze: FREEZE-003`; `scan` = automated check finding;
+`figma` = a comment on a Figma file and `issue` = an issue in a tracker, both staged by
+`forge comments import` and carrying `url`, where the comment lives at its source — DDR-124).
+`resolution` links the outcome: `accepted` links the resulting `TASK-###`; `declined` links
+the `DDR-###` recording why (declining feedback is a decision); `done` means the linked work
 shipped in a freeze. The body holds the feedback verbatim, as a blockquote.
 
 Review-sourced feedback carries two more fields, which are what let the record tell the
@@ -252,6 +274,14 @@ Feedback from a **guided** review — one where the reviewer worked through a sc
 what the reviewer was doing when they wrote it, which is what separates "this broke while
 approving" from "this broke".
 
+Feedback from a **scan** carries `vector`, naming which of the review rubric's four lenses
+produced it: `utility | coherence | hierarchy | viability` (DDR-108). It is written by
+`forge review apply` and always lands `pending` — a scan reports, a human dispositions, and
+one that dispositioned its own findings would be a gate rather than a review. Scan feedback
+may carry `route`, `selector`, `scenario` and `step` for the same reason review feedback
+does: where and while doing what. It never carries a score; the rubric produces arguable
+findings, not a grade.
+
 ### design/decisions/DDR-###-slug.md
 
 ```markdown
@@ -261,6 +291,7 @@ id: DDR-050
 title: "Forge is the design record, not the build tool"
 date: 2026-07-23
 decision_status: accepted
+reach: project
 sources:
   - resource: /design/calendar.md
 ---
@@ -270,6 +301,18 @@ sources:
 ## Alternatives rejected
 ## Consequences
 ```
+
+A decision says how far it reaches. `reach: project | general` is optional and defaults to
+`project`: the decision is about this product — its users, its brand, a constraint of this
+client. `general` marks one that would hold on a project with a different client: house
+style, a standing practice, a rule the author would carry to the next repo. The test is two
+questions, asked once when the decision is staged: does the *why* name this project's
+users, brand, or constraint? Would the decision hold on a different project? Both true
+means `project` now; it earns `general` when it recurs. Doctor checks the value and nothing
+in Forge reads it further, which is the point — a developer inheriting the repo can tell
+house style from this-project-only without reading every *why*, and a downstream reader
+that ranks or collects decisions across projects has a machine-readable hook without the
+format learning that reader's name (DDR-119).
 
 Accepted decisions are immutable. A later decision changes an earlier one in one of two
 ways, and they are different facts:
@@ -304,6 +347,15 @@ question_status: open
 Resolution sets `question_status: resolved` and `resolution: DDR-047` (or a `FEEDBACK`/
 `TASK` id). Together with `brief.md`, these files feed the CSD-matrix view: certainties
 come from the brief, suppositions and doubts live here.
+
+A question a stakeholder raised in a hosted review carries the provenance review feedback
+carries — `source: review`, `freeze`, `from`, `comment`, `route`, `selector`, and
+`scenario`/`step` when guided — and its body is the question verbatim, as a blockquote. It
+is written by `forge comments triage apply` from a comment the reviewer marked as a
+question (DDR-122): `answered` at triage is `question_status: resolved` with `resolution`
+naming what answers it; `open` is `open`; `declined` is `dropped` with the `DDR-###` that
+declines it. The service is told the outcome the way it is told feedback's, by id and
+title; the answer's own text stays in the record.
 
 ### design/stakeholders/, design/roles/, design/stories/
 
@@ -398,21 +450,97 @@ Dated rows referencing IDs — never restating them:
 - 2026-08-15 · deadline: dev handoff — gated on DDR-053
 ```
 
+### design/pages.md (optional)
+
+One row per page the prototype has, keyed by the route the build serves it at — the same
+identity `freezes.json#routes` records and a feedback's `route` carries (DDR-130):
+
+```markdown
+- / · Home — FLOW-001, STORY-002
+- /register · Sign up — FLOW-001, STORY-003, TASK-042
+- /forgot-password · Forgot password
+```
+
+The route is root-relative; `/register/` and `/register` are one page. The title is the
+text up to the first ` — `; every ID on the row is something that touches the page — a
+flow, a story, a task — referenced, never restated. A row is declared *intent*: which
+screens **changed** is derived from the build (DDR-121), and the feature log prints the
+intent beside the derived status. A route with no row reads as it did without the file,
+and a record without the file is asked for nothing. Components, requirements and stories
+have no manifest (creator decision 2026-09-14).
+
 ### design/feature-log.md (generated)
 
 Frontmatter carries `generated: { by: forge-cli/<version>, at: <iso> }` and
 `freeze: FREEZE-004` — the most recent freeze, since the file covers all of them. One
-`## <tag> — <date>` section per freeze, newest first, each a flat list of what closed
-since the freeze before it — no per-view grouping (creator decision 2026-07-24; no `view:`
-field exists to group by). The `generated` key is the single marker of derivation; the
-body opens with a one-line "generated by `forge freeze` — do not edit" notice for humans
-reading it raw.
+`## <tag> — <date>` section per freeze, newest first: a flat list of what closed since the
+freeze before it, a `### Screens` list of which built routes changed, and a `### Decisions
+accepted` list when any did. Tasks are not grouped by screen (creator decision 2026-07-24;
+no `view:` field exists to group by). The `generated` key is the single marker of
+derivation; the body opens with a one-line "generated by `forge freeze` — do not edit"
+notice for humans reading it raw.
+
+**Which screens changed is derived, not declared** (DDR-121). `forge freeze` records a
+content hash of every built route's `index.html` on the freeze (`freezes.json#routes`),
+which DDR-072's directory-per-route contract makes discoverable with no framework
+knowledge. A route whose hash differs from the previous freeze's *changed*; one absent
+before is *new*; one absent now was *removed*. Feedback carries the `route` it was left on,
+so feedback `addressed_in` the tag is listed under its screen. A freeze cut before hashes
+existed says so, and the one after it says the comparison is not available — neither
+guesses.
+
+**Declared intent sits beside the derived change** (DDR-130). When the record holds a
+`pages.md` at the tag, each screen line carries the page's title and the IDs that touch
+it — `` - `/register` changed — Sign up (STORY-003) — addresses FEEDBACK-002 `` — read
+from the manifest as it stood at that freeze, so a page renamed later does not rewrite an
+older section. A route with no row reads as it always did.
 
 **"Closed since" is read from Git, not from a field.** A task carries `opened` and a
 `status`, never a closed date; freezes are tags, so `forge freeze` compares the task ledger
 at consecutive tags and lists the ids that reached Done between them. The whole file is
 regenerated from the tags each freeze rather than appended to, so rebuilding it always
 produces the same file — which is what makes checking it against a regeneration meaningful.
+
+### design/checks/<tag>/<checker>.md (generated)
+
+A check is a report the record keeps (DDR-127): what one checker found against one version,
+at one commit. `forge check <tag>` writes one per checker under `checks/<tag>/` — `doctor`
+always, and every command named in `forge.json#checks` — beside a verbatim `<checker>.json`.
+Frontmatter carries `checker`, the checker's own `version`, `target` (the tag), `commit`,
+`date`, `command`, an optional `score`, the counts `findings`, `errors` and `warnings`, and
+`generated`, which is what makes the file derived. The body summarises in one line and lists
+the findings in a fenced block, so an id a checker quotes stays a literal (§6). Screenshots
+and other heavy artifacts stay out of the repository; a report may name them, the record does
+not hold them.
+
+**Forge specifies the report, never the checker.** A checker is any command that prints this
+JSON to stdout:
+
+```json
+{
+  "checker": "vizlint",
+  "version": "0.3.1",
+  "score": 87,
+  "summary": "Two contrast failures on the sign-in screen.",
+  "findings": [
+    { "rule": "contrast-aa", "severity": "error", "message": "Body text is 3.2:1.",
+      "route": "/", "selector": "main p", "fix": "Use the on-surface token." }
+  ]
+}
+```
+
+`checker`, `findings`, and each finding's `rule`, `severity` (`error | warning | info`) and
+`message` are required; `version`, `score`, `summary`, and a finding's `route`, `selector`,
+`file` and `fix` are optional. `forge.json#checks` lists checkers as `{ "name", "command",
+"dir"? }`, and the name is the report file's. A checker that exits non-zero, or prints
+anything but a report, has not produced a check, and `forge check` says which one. The
+tree must be clean when it runs, because a report names the commit it checked.
+
+**`forge freeze --require-check`** refuses to tag unless every expected checker has a
+report under `checks/<tag>/` that describes the commit being tagged — naming it, or differing
+from it only by the reports themselves, since the reports are committed after the check
+runs. The `forge-review` skill's findings are not a report: they are `source: scan` feedback
+(DDR-108), judgments a person dispositions, and the skill is an agent's to run.
 
 ## 6. Links
 
@@ -449,7 +577,8 @@ Doctor is the format's contract enforcement. It checks, at minimum:
 5. Every referenced ID resolves — IDs inside code spans and fenced blocks excepted, being
    literals rather than references (§6, DDR-069).
 6. Enums are valid — `type` is in the §2 vocabulary, and the domain status fields, task
-   statuses, and feedback sources hold documented values.
+   statuses, feedback sources, a decision's `reach` and a concept's `audience` hold
+   documented values.
 7. `accepted` feedback links a TASK; `declined` feedback links a DDR.
 8. Files carrying `generated` are unchanged since generation (hand-edits flagged) and name
    a generator the tooling knows.
@@ -458,6 +587,10 @@ Doctor is the format's contract enforcement. It checks, at minimum:
 11. No file name differs from an expected record file's only by case — on a
     case-insensitive filesystem the two are one path, so the record would otherwise read as
     valid and empty.
+12. An amendment is recorded on both decisions: `amends` on the one that amends,
+    `amended_by` on the one amended, once the amending decision is accepted (DDR-090).
+13. A page manifest, when the record has one, has a readable row per page and declares no
+    route twice after normalisation (DDR-130). A record without one is asked for nothing.
 
 Skills end every session by running doctor and fixing what it reports. This is what lets
 the model write content freely while the contract holds.

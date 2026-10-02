@@ -333,3 +333,54 @@ describe("rule 12: an amendment is recorded on both decisions (DDR-090)", () => 
     expect(rules((await runDoctor(root)).findings)).toContain("amendment-shape");
   });
 });
+
+describe("rule 13: a page manifest is optional, and held to its shape when present (TASK-468)", () => {
+  it("asks nothing of a record without one, and reports nothing for a clean one", async () => {
+    await seedBundle();
+    expect((await runDoctor(root)).findings).toEqual([]);
+
+    await write(
+      "design/pages.md",
+      "---\ntype: Page Manifest\ntitle: Pages\n---\n<!-- one row per page -->\n- / · Home — QUESTION-001\n- `/register` · Sign up\n",
+    );
+    expect((await runDoctor(root)).findings).toEqual([]);
+  });
+
+  it("reports a row it cannot read and a route declared twice, at the file's line numbers", async () => {
+    await seedBundle();
+    await write(
+      "design/pages.md",
+      "---\ntype: Page Manifest\ntitle: Pages\n---\n- / · Home\n- just a note\n- /register/ · Sign up\n- /register · Sign up again\n",
+    );
+
+    const result = await runDoctor(root);
+
+    expect(rules(result.findings)).toEqual(["page-manifest", "page-manifest"]);
+    expect(result.findings[0]?.file).toBe("design/pages.md");
+    // Line 6 of the file, not line 2 of the body: a reader opens the file.
+    expect(result.findings[0]?.message).toContain("line 6: not a page row");
+    // `/register/` and `/register` are one page in the build, so one row.
+    expect(result.findings[1]?.message).toContain(
+      "line 8: `/register` is already declared on line 7",
+    );
+  });
+});
+
+describe("rule 6: a decision's `reach` holds a documented value (TASK-457)", () => {
+  const decision = (id: string, front = "") =>
+    `---\ntype: Decision\nid: ${id}\ntitle: "A decision"\ndate: 2026-09-11\ndecision_status: accepted\n${front}---\n## Decision\nSomething.\n`;
+
+  it("accepts both words and the field's absence, and reports a third word as an enum error", async () => {
+    await seedBundle();
+    await write("design/decisions/DDR-001-first.md", decision("DDR-001"));
+    await write("design/decisions/DDR-002-second.md", decision("DDR-002", "reach: general\n"));
+    await write("design/decisions/DDR-003-third.md", decision("DDR-003", "reach: project\n"));
+    await write("design/decisions/DDR-004-fourth.md", decision("DDR-004", "reach: everywhere\n"));
+    await writeBundleIndex(root);
+
+    const result = await runDoctor(root);
+    const found = result.findings.filter((f) => f.rule === "invalid-enum");
+    expect(found.map((f) => f.file)).toEqual(["design/decisions/DDR-004-fourth.md"]);
+    expect(found[0]?.message).toContain("reach: everywhere");
+  });
+});

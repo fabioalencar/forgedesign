@@ -380,6 +380,121 @@ describe("comment triage (stage/apply, spec/format.md)", () => {
     expect(written).toContain("#tiers > div:nth-child(3)");
   });
 
+  it("files a question as a Question concept, answered, open or declined — never as feedback (TASK-462)", async () => {
+    const repo = await makeRepo();
+    await fs.mkdir(path.join(repo, "design", "decisions"), { recursive: true });
+    await fs.writeFile(
+      path.join(repo, "design", "decisions", "DDR-051-one-door.md"),
+      "---\ntype: Decision\nid: DDR-051\ntitle: One door\ndate: 2026-07-01\ndecision_status: accepted\ncontext_source: test\n---\n## Decision\n\nX\n",
+    );
+    const answered = comment({
+      kind: "question",
+      body: "Why is there only one way in?",
+      route: "/",
+      created_at: "2026-07-05T10:00:00Z",
+    });
+    const open = comment({ kind: "question", body: "Will there be SSO?", author_label: "CTO" });
+    const declined = comment({ kind: "question", body: "Can we skip the PIN?" });
+    served = [answered, open, declined];
+    await stageTriage({ tag: "alpha", cwd: repo });
+    await stageProposal(repo, "alpha", [
+      { commentId: answered.id, disposition: "answered", answerId: "DDR-051" },
+      { commentId: open.id, disposition: "open" },
+      { commentId: declined.id, disposition: "declined", ddrId: "DDR-051" },
+    ]);
+
+    const result = await applyTriage({ tag: "alpha", cwd: repo });
+    expect(result.questionIds).toEqual(["QUESTION-001", "QUESTION-002", "QUESTION-003"]);
+    expect(result.feedbackIds).toEqual([]);
+    expect(result.taskIds).toEqual([]);
+
+    const first = await fs.readFile(
+      path.join(repo, "design", "questions", "QUESTION-001.md"),
+      "utf8",
+    );
+    expect(first).toContain("type: Question");
+    expect(first).toContain("title: Why is there only one way in?");
+    expect(first).toContain("date: 2026-07-05");
+    expect(first).toContain("question_status: resolved");
+    expect(first).toContain("resolution: DDR-051");
+    // The same provenance feedback carries, so the trail can answer the asker.
+    expect(first).toContain("source: review");
+    expect(first).toContain("freeze: FREEZE-001");
+    expect(first).toContain("from: PM");
+    expect(first).toContain(`comment: ${answered.id}`);
+    expect(first).toContain("route: /");
+    expect(first).toContain("> Why is there only one way in?");
+
+    const second = await fs.readFile(
+      path.join(repo, "design", "questions", "QUESTION-002.md"),
+      "utf8",
+    );
+    expect(second).toContain("question_status: open");
+    expect(second).not.toContain("resolution:");
+    expect(second).toContain("from: CTO");
+
+    const third = await fs.readFile(
+      path.join(repo, "design", "questions", "QUESTION-003.md"),
+      "utf8",
+    );
+    expect(third).toContain("question_status: dropped");
+    expect(third).toContain("resolution: DDR-051");
+
+    await expect(fs.access(path.join(repo, "design", "feedback"))).rejects.toThrow();
+    expect(markFetchedCalls).toHaveLength(1);
+  });
+
+  it("refuses a question dispositioned like a comment, and a comment dispositioned like a question", async () => {
+    const repo = await makeRepo();
+    const question = comment({ kind: "question", body: "Why?" });
+    const plain = comment({ body: "too heavy" });
+    served = [question, plain];
+    await stageTriage({ tag: "alpha", cwd: repo });
+
+    await stageProposal(repo, "alpha", [
+      { commentId: question.id, disposition: "accepted", taskTitle: "x" },
+      { commentId: plain.id, disposition: "pending" },
+    ]);
+    await expect(applyTriage({ tag: "alpha", cwd: repo })).rejects.toThrow(/is a question/);
+
+    await stageProposal(repo, "alpha", [
+      { commentId: question.id, disposition: "open" },
+      { commentId: plain.id, disposition: "answered", answerId: "DDR-001" },
+    ]);
+    await expect(applyTriage({ tag: "alpha", cwd: repo })).rejects.toThrow(/is a comment/);
+    // Nothing was written by either refusal.
+    await expect(fs.access(path.join(repo, "design", "questions"))).rejects.toThrow();
+  });
+
+  it("refuses an answer that names nothing in the record, and accepts a task that is", async () => {
+    const repo = await makeRepo();
+    const ledger = path.join(repo, "design", "todos.md");
+    await fs.writeFile(
+      ledger,
+      `${await fs.readFile(ledger, "utf8")}\n- [ ] TASK-009 Add SSO\n  status: todo · opened: 2026-07-01\n`,
+      "utf8",
+    );
+    const question = comment({ kind: "question", body: "Will there be SSO?" });
+    served = [question];
+    await stageTriage({ tag: "alpha", cwd: repo });
+
+    await stageProposal(repo, "alpha", [
+      { commentId: question.id, disposition: "answered", answerId: "DDR-404" },
+    ]);
+    await expect(applyTriage({ tag: "alpha", cwd: repo })).rejects.toThrow(/DDR-404/);
+
+    await stageProposal(repo, "alpha", [
+      { commentId: question.id, disposition: "answered", answerId: "TASK-009" },
+    ]);
+    const result = await applyTriage({ tag: "alpha", cwd: repo });
+    expect(result.questionIds).toEqual(["QUESTION-001"]);
+    const written = await fs.readFile(
+      path.join(repo, "design", "questions", "QUESTION-001.md"),
+      "utf8",
+    );
+    expect(written).toContain("resolution: TASK-009");
+  });
+
   it("skips a comment the proposal doesn't mention, but still marks the rest fetched", async () => {
     const repo = await makeRepo();
     const dispositioned = comment({ body: "handled" });

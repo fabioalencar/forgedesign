@@ -1,9 +1,9 @@
 ---
-name: review
+name: forge-review
 description: Evaluate a built prototype against the record using the four-vector review rubric, and file the findings as feedback. Use when the user asks to "review the prototype", "run the rubric", "check this against the brief", or wants to know whether what was built serves what the record says it is for.
 ---
 
-# review
+# forge-review
 
 Runs the four-vector rubric (DDR-108) over a built prototype **against the record**, and
 files what it finds as `source: scan` feedback. This skill judges; `forge review apply` is

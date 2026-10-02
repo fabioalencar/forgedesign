@@ -1,5 +1,5 @@
 // Context intake (DDR-021, reshaped per DDR-050): raw material is staged,
-// classified by the designer's own agent session (the `intake` skill), then
+// classified by the designer's own agent session (the `forge-intake` skill), then
 // validated here before a human accepts an individual proposal into the
 // tracked design record. The CLI never dispatches a model.
 
@@ -184,7 +184,7 @@ function validateItem(value: unknown, source: string): IntakeProposalItem[] {
 }
 
 /**
- * Validates the proposal.json an agent session's `intake` skill wrote for a
+ * Validates the proposal.json an agent session's `forge-intake` skill wrote for a
  * previously staged source, and stages the reviewable proposal.md. The CLI
  * never classifies — it only proves every quote came from the source.
  */

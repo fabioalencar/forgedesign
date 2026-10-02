@@ -1,9 +1,9 @@
 ---
-name: intake
+name: forge-intake
 description: Classify a staged transcript, meeting note, or other raw context into candidate tasks/decisions/artifacts for the design record. Use when the user asks to "intake" a transcript, meeting note, or other context source, or points you at a file staged under .forge/intake/.
 ---
 
-# intake
+# forge-intake
 
 Turns raw context (a call transcript, meeting notes, a long chat log) into reviewable
 candidates: `TASK-###`s for the task ledger, DDR stubs for decisions/, or artifact requests. This
@@ -44,7 +44,7 @@ the record is what every later agent session reads for context.
 
 3. **Classify.** For each candidate worth surfacing, decide:
    - `type`: `"task"` (something to do), `"ddr"` (a decision that was made or needs to be
-     — this stages a stub only; the `ddr` skill fills in the real Why/Alternatives later),
+     — this stages a stub only; the `forge-ddr` skill fills in the real Why/Alternatives later),
      or `"artifact"` (a deliverable request — user-flows, journey-maps,
      service-blueprints, site-audits, personas, competitive-analysis, user-stories,
      data-model, or process-flow).

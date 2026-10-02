@@ -19,14 +19,19 @@ function resolveDashboardDir(): string | null {
 }
 
 export function registerDashCommand(program: Command): void {
+  // The dashboard is not published (TASK-406), so an npm install has no
+  // dashboard beside it. Listing a command that can only fail is a worse first
+  // impression than not listing it: it stays callable, and says why.
+  const available = resolveDashboardDir() !== null;
   program
-    .command("dash")
+    .command("dash", { hidden: !available })
     .description("start the local Forge dashboard (Next.js) on http://127.0.0.1:4400")
     .action(() => {
       const dir = resolveDashboardDir();
       if (!dir) {
         console.error(
-          "dashboard package not found — set FORGE_DASHBOARD_DIR to the @forgedesign/dashboard directory",
+          "forge dash: the local dashboard runs from a Forge source checkout and is not part of the\n" +
+            "  npm package. Set FORGE_DASHBOARD_DIR to the dashboard package in a checkout.",
         );
         process.exitCode = 1;
         return;

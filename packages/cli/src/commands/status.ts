@@ -83,7 +83,7 @@ function describeUnfetched(result: UnfetchedCount): string {
     case "count":
       return String(result.count);
     case "not-configured":
-      return "n/a (set commentsApiUrl and commentsApiKey in ~/.forge/config.json)";
+      return "n/a (not signed in — run `forge login`)";
     case "no-snapshots":
       return "n/a (no freeze has registered a snapshot yet)";
     case "unreachable":

@@ -2,7 +2,7 @@
 // the comments that caused them.
 //
 // A stakeholder who commented on a frozen preview currently gets silence. The
-// triage skill already closes the loop *inside* the record — a comment becomes
+// forge-triage skill already closes the loop *inside* the record — a comment becomes
 // a FEEDBACK, an accepted one becomes a TASK, the task gets done in some later
 // release — and every fact needed to tell them so is already on disk. This
 // reads those facts and tells the comment service, so an old share link can say
@@ -22,11 +22,7 @@ import {
   taskView,
 } from "@forgedesign/format";
 import { bundleRootOf, writeBundleIndex } from "./bundle-index.js";
-import {
-  type CommentResolution,
-  type CommentsApiConfig,
-  syncResolutions,
-} from "./comments-client.js";
+import { type CommentResolution, commentsApiFor, syncResolutions } from "./comments-client.js";
 import { readUserConfig } from "./config.js";
 import { type FreezeRecord, readFreezes } from "./freezes.js";
 import { requireRepoRoot } from "./git.js";
@@ -48,6 +44,8 @@ export interface ResolveTrailResult {
   addressed: number;
   /** declined feedback pushed outward (first time or repaired) */
   declined: number;
+  /** stakeholder questions told what answered them (TASK-462) */
+  answered: number;
   /** comment rows the service reported updating */
   synced: number;
   /** FEEDBACK ids stamped `addressed_in` by this run */
@@ -98,12 +96,23 @@ function project(
       .filter((c) => c.type === "Decision" && c.id)
       .map((c) => [c.id as string, c.title ?? c.id] as const),
   );
+  const titles = new Map(
+    concepts.filter((c) => c.id).map((c) => [c.id as string, c.title ?? c.id] as const),
+  );
+  /** What an id names, for a note a stakeholder will read beside their question. */
+  const titleOf = (id: string): string => {
+    if (id.startsWith("TASK-")) {
+      const entry = findTask(ledger, id);
+      return entry ? taskView(entry).title : "see the record";
+    }
+    return titles.get(id) ?? "see the record";
+  };
   const urlForTag = (wanted: string): string | null =>
     freezes.find((f) => f.tag === wanted)?.previewUrl ?? null;
 
   const projections: Projection[] = [];
   for (const concept of concepts) {
-    if (concept.type !== "Feedback") continue;
+    if (concept.type !== "Feedback" && concept.type !== "Question") continue;
     const commentId = asString(concept.frontmatter.comment);
     const freezeId = asString(concept.frontmatter.freeze);
     if (commentId === null || freezeId === null) continue; // not a hosted-review comment
@@ -116,6 +125,28 @@ function project(
 
     const status = concept.domainStatus?.value ?? null;
     const resolution = asString(concept.frontmatter.resolution);
+
+    // A question is answered, never shipped (TASK-462): the note carries what
+    // answered it, the way a declined comment's note carries its decision, and
+    // the answer's own text stays in the record. Nothing to stamp — the
+    // question's status is already the fact.
+    if (concept.type === "Question") {
+      const note = resolution === null ? null : `${resolution}: ${titleOf(resolution)}`;
+      if (status === "resolved" || status === "dropped") {
+        projections.push({
+          concept,
+          snapshotId: freeze.snapshotId,
+          resolution: {
+            commentId,
+            status: status === "resolved" ? "addressed" : "declined",
+            note,
+          },
+          stamp: null,
+        });
+      }
+      continue;
+    }
+
     const alreadyAddressedIn = asString(concept.frontmatter.addressed_in);
 
     // Re-push what is already settled: a sync that failed last time (or a
@@ -186,16 +217,10 @@ export async function resolveTrail(options: ResolveTrailOptions): Promise<Resolv
   const log = options.log ?? (() => {});
   const root = await requireRepoRoot(options.cwd);
 
-  const userConfig = await readUserConfig();
-  if (!userConfig.commentsApiUrl || !userConfig.commentsApiKey) {
-    throw new Error(
-      "comment API not configured — set commentsApiUrl and commentsApiKey in ~/.forge/config.json",
-    );
-  }
-  const api: CommentsApiConfig = {
-    apiUrl: userConfig.commentsApiUrl,
-    apiKey: userConfig.commentsApiKey,
-  };
+  // Cloud first, the direct config as the operator's escape hatch — the same
+  // rule every other `forge comments` subcommand follows (DDR-104). Reading the
+  // direct config alone left a Cloud creator unable to close the loop (TASK-477).
+  const api = commentsApiFor(await readUserConfig());
 
   const recordRoot = await bundleRootOf(root);
   if (recordRoot === null) {
@@ -214,7 +239,7 @@ export async function resolveTrail(options: ResolveTrailOptions): Promise<Resolv
   const warnings: string[] = [];
   const projections = project(bundle.concepts, freezes, ledger, options.tag, previewUrl, warnings);
   if (projections.length === 0) {
-    return { addressed: 0, declined: 0, synced: 0, stamped: [], recordRoot, warnings };
+    return { addressed: 0, declined: 0, answered: 0, synced: 0, stamped: [], recordRoot, warnings };
   }
 
   const bySnapshot = new Map<string, Projection[]>();
@@ -228,6 +253,7 @@ export async function resolveTrail(options: ResolveTrailOptions): Promise<Resolv
   const stamped: string[] = [];
   let addressed = 0;
   let declined = 0;
+  let answered = 0;
 
   for (const [snapshotId, group] of bySnapshot) {
     try {
@@ -245,6 +271,11 @@ export async function resolveTrail(options: ResolveTrailOptions): Promise<Resolv
       continue;
     }
     for (const projection of group) {
+      if (projection.concept.type === "Question") {
+        if (projection.resolution.status === "addressed") answered += 1;
+        else declined += 1;
+        continue;
+      }
       if (projection.resolution.status === "declined") declined += 1;
       if (projection.stamp === null) continue;
       const abs = path.join(root, recordRoot, projection.concept.relPath);
@@ -262,5 +293,5 @@ export async function resolveTrail(options: ResolveTrailOptions): Promise<Resolv
     await writeBundleIndex(root);
     log(`Marked ${stamped.join(", ")} shipped in ${options.tag}.`);
   }
-  return { addressed, declined, synced, stamped, recordRoot, warnings };
+  return { addressed, declined, answered, synced, stamped, recordRoot, warnings };
 }
