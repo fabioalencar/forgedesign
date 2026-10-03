@@ -3,7 +3,7 @@ type: Decision
 id: DDR-002
 title: The three packages publish under one version number
 date: 2026-10-02
-decision_status: draft
+decision_status: accepted
 context_source: TASK-001's open question, answered by the creator 2026-10-02 before the first publish
 ---
 ## Decision
