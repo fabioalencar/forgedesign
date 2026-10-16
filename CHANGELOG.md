@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1 — 2026-10-15
+## 0.1.1 — 2026-10-16
 
 - Restore Forge Cloud connectivity after its move to `app.useforge.design`. The CLI also reads a saved `https://useforge.design` as the app host, keeps the existing token, and preserves custom Cloud addresses.
 - Publish through Cloud's staged-upload protocol: declare file sizes and hashes, upload bytes directly, then commit after every upload succeeds. Retry temporary upload failures; retain single-request publishing for servers that do not advertise staged uploads.

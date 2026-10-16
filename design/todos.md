@@ -17,13 +17,15 @@ why a record cannot be divided.
   notes: The README states what the packages are. What a first-time reader needs is the loop end to end — `forge init` on a repository that already has code, a decision written while building, `forge freeze` producing a portable static build, and a stakeholder's comment landing back in the record as a task with a `genesis`. That is a walkthrough against a real project rather than prose, and it is the difference between a spec someone skims and a tool someone tries.
 
 ## Doing
-- [ ] TASK-004 Release 0.1.1 so the published CLI reaches Cloud
-  status: doing · opened: 2026-10-15
-  genesis: Cloud cutover 2026-10-15; DDR-002
-  notes: npm 0.1.0 still calls the website's retired API. This focused release moves the default and saved website URL to `app.useforge.design`, preserves tokens and custom endpoints, and includes staged uploads because the new service refuses the old publish body. Existing library exports and intake behavior remain compatible. All three packages use 0.1.1 under DDR-002. Verify the full public checks, packed installs, fresh/saved/custom routing, staged upload and Cloud access, then check a clean registry install after publishing.
-
 
 ## Done
+
+- [x] TASK-004 Release 0.1.1 so the published CLI reaches Cloud
+  status: done · opened: 2026-10-15
+  genesis: Cloud cutover 2026-10-15; DDR-002
+  notes: npm 0.1.0 still calls the website's retired API. This focused release moves the default and saved website URL to `app.useforge.design`, preserves tokens and custom endpoints, and includes staged uploads because the new service refuses the old publish body. Existing library exports and intake behavior remain compatible. All three packages use 0.1.1 under DDR-002. Verify the full public checks, packed installs, fresh/saved/custom routing, staged upload and Cloud access, then check a clean registry install after publishing.
+  closed: 2026-10-16 · **Done.** All three packages are npm latest at 0.1.1, with exact sibling dependencies. After npm's scan completed, a clean registry install passed all 11 routing/upload checks, and the installed CLI reached live identity and comments using the unchanged legacy saved config. The source tag is `v0.1.1` at `e17a799`; the GitHub release is published as latest. Public CI and 620 tests pass. Real HTML, CSS and Markdown staging uploads also pass against the Cloud app.
+
 - [x] TASK-001 Publish the packages to npm under the @forgedesign scope
   status: done · opened: 2026-08-03
   genesis: DDR-001
