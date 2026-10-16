@@ -44,8 +44,7 @@ forge comments triage v1    # stage their comments for your agent to disposition
 Invited creators sign in at [app.useforge.design](https://app.useforge.design) and find or
 change review PINs on its [Prototypes page](https://app.useforge.design/prototypes).
 
-This branch targets **0.1.1; npm publication is pending**. The published `0.1.0` still
-calls the retired website API. In the new CLI, an unset Cloud address or the old default
+Starting with **0.1.1**, an unset Cloud address or the old default
 `https://useforge.design` (with or without a trailing slash) uses the app host. Custom
 addresses stay as configured. The move does not rewrite your config or require a new
 login; existing valid tokens continue to work.
