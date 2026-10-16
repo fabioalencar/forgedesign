@@ -4,7 +4,7 @@ import { prototypeOutputDir } from "../build.js";
 import { bundleRootOf } from "../bundle-index.js";
 import { CLOUD_HELP_GROUP } from "../cloud-auth.js";
 import { readFreezes, setFreezeSnapshotId } from "../freezes.js";
-import { repoRoot } from "../git.js";
+import { git, repoRoot } from "../git.js";
 import { readProjectFile } from "../project.js";
 import { collectRecord, publishBuild, withdrawPublished } from "../publish.js";
 
@@ -60,6 +60,11 @@ export function registerPublishCommand(program: Command): void {
       const recordRoot = await bundleRootOf(root);
       const record = recordRoot === null ? undefined : await collectRecord(root, tag, recordRoot);
 
+      const message =
+        (
+          await git(root, ["tag", "-l", "--format=%(contents:subject)", tag]).catch(() => "")
+        ).trim() || undefined;
+
       console.log(`Publishing ${tag}…`);
       const outcome = await publishBuild({
         buildDir,
@@ -68,6 +73,7 @@ export function registerPublishCommand(program: Command): void {
         tag,
         force: options.force,
         record,
+        message,
       });
 
       if (!outcome.ok) {
@@ -124,7 +130,7 @@ export function registerPublishCommand(program: Command): void {
       if (pin) {
         console.log(`\n  PIN ${pin}`);
         console.log("  Send it with the link. It is not saved in this repo — find it again at");
-        console.log("  useforge.design/cloud/prototypes, where you can also change it.");
+        console.log("  app.useforge.design/prototypes, where you can also change it.");
       } else {
         // A service from before the mint moved. The freeze's own PIN is still
         // what gates it, and that is still in `freezes.json`.

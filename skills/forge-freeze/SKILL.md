@@ -52,7 +52,7 @@ sure the tag actually tells the story of what changed, not just stamping a versi
    the URLs — copy them verbatim so the user can hand them off directly.
 
    **If you published, say plainly that the PIN is not saved in the repo.** It is shown once, and after that
-   it lives only in Cloud, at `useforge.design/cloud/prototypes`, where it can also be
+   it lives only in Cloud, at `app.useforge.design/prototypes`, where it can also be
    changed. That is deliberate: it used to be committed to `freezes.json`, which put every
    review gate into every clone of the repository (DDR-115).
 

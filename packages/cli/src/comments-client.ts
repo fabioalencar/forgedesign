@@ -2,7 +2,7 @@
 // DDR-009. Kept dependency-free: Node's global fetch. Shared with the
 // dashboard via the @forgedesign/cli/comments-client export.
 
-import { NOT_SIGNED_IN } from "./cloud-auth.js";
+import { cloudBase, NOT_SIGNED_IN } from "./cloud-auth.js";
 import { readUserConfig } from "./config.js";
 import { readFreezes } from "./freezes.js";
 
@@ -38,7 +38,7 @@ export function commentsApiFor(userConfig: {
   commentsApiKey?: string;
 }): CommentsApiConfig {
   if (userConfig.cloudToken) {
-    const origin = (userConfig.cloudApiUrl ?? "https://useforge.design").replace(/\/$/, "");
+    const origin = cloudBase(userConfig.cloudApiUrl);
     return { apiUrl: `${origin}/api/cli`, apiKey: userConfig.cloudToken };
   }
   if (userConfig.commentsApiUrl && userConfig.commentsApiKey) {

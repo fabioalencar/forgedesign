@@ -197,7 +197,7 @@ Use when asked to freeze, cut a release, or tag a version.
    command's output. **A freeze has no PIN** — the review gate belongs to hosting, so
    `forge publish` mints it and prints it once (DDR-115). If you published, copy that PIN
    verbatim too, and say that it is not stored in the repo: it is looked up and changed at
-   `useforge.design/cloud/prototypes`.
+   `app.useforge.design/prototypes`.
 
 `forge freeze` writes `design/feature-log.md` — what reached Done between the previous tag
 and this one, read from Git rather than from a field. Report it like the other outputs.

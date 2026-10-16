@@ -8,6 +8,7 @@
 // is what was frozen and not what the repo has moved on to. The repository
 // itself stays home.
 
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
@@ -165,7 +166,15 @@ export async function collectRecord(
 ): Promise<RecordSnapshot> {
   let listing: string;
   try {
-    listing = await git(root, ["ls-tree", "-r", "--name-only", tag, "--", recordRoot]);
+    listing = await git(root, [
+      "ls-tree",
+      "-r",
+      "--name-only",
+      "--end-of-options",
+      tag,
+      "--",
+      recordRoot,
+    ]);
   } catch {
     return EMPTY_SNAPSHOT;
   }
@@ -247,6 +256,60 @@ export interface PublishRefusal {
   secrets?: Array<{ path: string; what: string }>;
 }
 
+/**
+ * The most one publish can send (TASK-522).
+ *
+ * Not Forge's number: the host refuses a function request body over 4.5 MB
+ * before the route runs, with its own error text (measured 2026-10-12). Files
+ * travel as base64 inside JSON, so this is about 3.3 MB of build and record,
+ * far under the 25 MB the service checks. Until publish uploads straight to
+ * storage (DDR-153), the CLI says so before the transfer and names what to
+ * shrink.
+ */
+export const PUBLISH_BODY_LIMIT = 4_500_000;
+
+const decodedSize = (file: PublishFile): number => Buffer.byteLength(file.content, "base64");
+
+const megabytes = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`;
+
+/**
+ * The refusal for a publish too large to send — the size, the limit, and the
+ * five largest files, since those are what a creator can actually shrink.
+ * `--force` is not offered: the limit is the host's, and nothing gets past it.
+ */
+export function oversizeRefusal(bodyBytes: number, files: PublishFile[]): string {
+  const total = files.reduce((sum, file) => sum + decodedSize(file), 0);
+  const largest = [...files]
+    .sort((a, b) => decodedSize(b) - decodedSize(a))
+    .slice(0, 5)
+    .map((file) => `  ${megabytes(decodedSize(file)).padStart(8)}  ${file.path}`)
+    .join("\n");
+  return [
+    `this publish is ${megabytes(bodyBytes)} to send, and Forge Cloud takes at most ${megabytes(PUBLISH_BODY_LIMIT)}`,
+    `per publish — about 3.3 MB of files, because they travel encoded. These come to`,
+    `${megabytes(total)}; the largest:`,
+    ``,
+    largest,
+    ``,
+    `Compress or resize the largest images and video, or host big media elsewhere and`,
+    `link to it. --force does not get past this: the limit is the host's, not a check.`,
+  ].join("\n");
+}
+
+type PublishOutcome = { ok: true; result: PublishResult } | { ok: false; refusal: PublishRefusal };
+
+interface PublishRequest {
+  base: string;
+  headers: Record<string, string>;
+  projectId: string;
+  repoName: string;
+  tag: string;
+  force?: boolean;
+  message?: string;
+  files: PublishFile[];
+  record?: PublishFile[];
+}
+
 export async function publishBuild(input: {
   buildDir: string;
   projectId: string;
@@ -256,7 +319,9 @@ export async function publishBuild(input: {
   force?: boolean;
   /** the record as `collectRecord` filtered it; omitted when the repo has none */
   record?: RecordSnapshot;
-}): Promise<{ ok: true; result: PublishResult } | { ok: false; refusal: PublishRefusal }> {
+  /** the freeze's message, which Cloud shows beside the version */
+  message?: string;
+}): Promise<PublishOutcome> {
   const config = await readUserConfig();
   if (!config.cloudToken) {
     return { ok: false, refusal: { error: NOT_SIGNED_IN } };
@@ -274,43 +339,154 @@ export async function publishBuild(input: {
     if (hazards.length > 0) return { ok: false, refusal: { error: hazardRefusal(hazards) } };
   }
 
-  const res = await fetch(`${base}/api/cli/publish`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.cloudToken}`,
-    },
-    body: JSON.stringify({
-      projectId: input.projectId,
-      repoName: input.repoName,
-      // No `pin`: Cloud mints the review gate at publish and hands it back
-      // (DDR-115). Sending one from here is what put every PIN a creator ever cut
-      // into `freezes.json`, and `freezes.json` is tracked in Git.
-      tag: input.tag,
-      force: input.force === true ? true : undefined,
-      files,
-      // Beside the build, never inside it: the service keeps the two apart so
-      // nothing in the record is ever served as an artifact (DDR-129).
-      record: input.record && input.record.files.length > 0 ? input.record.files : undefined,
-    }),
-  });
+  const request: PublishRequest = {
+    base,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.cloudToken}` },
+    projectId: input.projectId,
+    repoName: input.repoName,
+    tag: input.tag,
+    force: input.force,
+    message: input.message,
+    files,
+    record: input.record && input.record.files.length > 0 ? input.record.files : undefined,
+  };
 
-  // Read as text first. Every refusal this service *intends* is JSON with an
-  // `error`, but an unhandled exception in the route comes back as an HTML error
-  // page — and parsing that into `{}` produced the single least useful message
-  // this CLI has ever printed: "forge publish: undefined" (TASK-355).
+  // The server says how it takes a publish (DDR-154): Cloud stages uploads
+  // (DDR-153); the website's older route takes one body.
+  const me = await fetch(`${base}/api/cli/me`, { headers: request.headers });
+  if (me.status === 401) return { ok: false, refusal: { error: NOT_SIGNED_IN } };
+  const transport = me.ok
+    ? ((await me.json().catch(() => ({}))) as { publish?: unknown }).publish
+    : undefined;
+  return transport === "staged" ? publishStaged(request) : publishSingleBody(request);
+}
+
+/** How many uploads run at once, and how often one is tried before the publish gives up. */
+const UPLOAD_CONCURRENCY = 8;
+const UPLOAD_ATTEMPTS = 3;
+
+interface PresignedUpload {
+  kind: "build" | "record";
+  path: string;
+  url: string;
+  contentType: string;
+}
+
+/**
+ * A publish as Cloud takes it (DDR-153): declare every file, `PUT` each to the
+ * URL Cloud presigned for it, then commit. Cloud checks what arrived against
+ * the declaration before anything is published, so a file that fails here
+ * fails the publish rather than going out incomplete.
+ */
+async function publishStaged(request: PublishRequest): Promise<PublishOutcome> {
+  const bytes = new Map<string, Buffer>();
+  const declare = (kind: "build" | "record") => (file: PublishFile) => {
+    const data = Buffer.from(file.content, "base64");
+    bytes.set(`${kind}:${file.path}`, data);
+    return {
+      path: file.path,
+      size: data.byteLength,
+      sha256: createHash("sha256").update(data).digest("hex"),
+      contentType: file.contentType,
+    };
+  };
+  const opened = await readOutcome<{ uploadId: string; uploads: PresignedUpload[] }>(
+    request.base,
+    await fetch(`${request.base}/api/cli/publish`, {
+      method: "POST",
+      headers: request.headers,
+      body: JSON.stringify({
+        projectId: request.projectId,
+        repoName: request.repoName,
+        tag: request.tag,
+        force: request.force === true ? true : undefined,
+        message: request.message,
+        files: request.files.map(declare("build")),
+        // Beside the build, never inside it (DDR-129).
+        record: (request.record ?? []).map(declare("record")),
+      }),
+    }),
+  );
+  if (!opened.ok) return opened;
+
+  const { uploadId, uploads } = opened.result;
+  for (let i = 0; i < uploads.length; i += UPLOAD_CONCURRENCY) {
+    const failures = await Promise.all(
+      uploads.slice(i, i + UPLOAD_CONCURRENCY).map(async (upload) => {
+        const data = bytes.get(`${upload.kind}:${upload.path}`);
+        const failure = data
+          ? await putWithRetry(upload, data)
+          : "Cloud asked for a file this build does not have";
+        return failure
+          ? `${upload.kind === "record" ? "design/" : ""}${upload.path}: ${failure}`
+          : null;
+      }),
+    );
+    const failed = failures.find((failure) => failure !== null);
+    if (failed) return { ok: false, refusal: { error: `could not upload ${failed}` } };
+  }
+
+  return readOutcome<PublishResult>(
+    request.base,
+    await fetch(`${request.base}/api/cli/publish/commit`, {
+      method: "POST",
+      headers: request.headers,
+      body: JSON.stringify({ uploadId }),
+    }),
+  );
+}
+
+/**
+ * One file to its presigned URL, or why not. A `409` means an earlier attempt
+ * landed before its answer was lost (the URL refuses overwrites), so it counts
+ * as uploaded; commit's hash check decides whether it was right. A network
+ * error or a 5xx is tried again; any other refusal is final.
+ */
+async function putWithRetry(upload: PresignedUpload, data: Buffer): Promise<string | null> {
+  let last = "";
+  for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await fetch(upload.url, {
+        method: "PUT",
+        headers: { "Content-Type": upload.contentType },
+        body: data,
+      });
+      if (res.ok || res.status === 409) return null;
+      last =
+        `HTTP ${res.status} ${(await res.text()).replace(/\s+/g, " ").trim().slice(0, 200)}`.trim();
+      if (res.status < 500) return last;
+    } catch (cause) {
+      last = cause instanceof Error ? cause.message : String(cause);
+    }
+    if (attempt < UPLOAD_ATTEMPTS)
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+  }
+  return last;
+}
+
+/**
+ * A response as a result or a refusal. Read as text first: every refusal the
+ * service intends is JSON with an `error`, but an unhandled exception comes back
+ * as an HTML page, and parsing that into `{}` printed "forge publish: undefined"
+ * (TASK-355).
+ */
+async function readOutcome<T>(
+  base: string,
+  res: Response,
+  tooLarge?: () => string,
+): Promise<{ ok: true; result: T } | { ok: false; refusal: PublishRefusal }> {
   const raw = await res.text();
-  let body: (PublishResult & PublishRefusal) | undefined;
+  let body: (T & PublishRefusal) | undefined;
   try {
-    body = JSON.parse(raw) as PublishResult & PublishRefusal;
+    body = JSON.parse(raw) as T & PublishRefusal;
   } catch {
     body = undefined;
   }
-
   if (!res.ok) {
     if (body && typeof body.error === "string") return { ok: false, refusal: body };
-    // Not a refusal we know how to describe — say what the server actually did,
-    // because a status code and a snippet are what make this reportable.
+    if (res.status === 413 && tooLarge) return { ok: false, refusal: { error: tooLarge() } };
+    // Not a refusal we know how to describe: say what the server did, because
+    // a status code and a snippet are what make this reportable.
     const snippet = raw.replace(/\s+/g, " ").trim().slice(0, 300);
     return {
       ok: false,
@@ -321,7 +497,6 @@ export async function publishBuild(input: {
       },
     };
   }
-
   if (!body) {
     return {
       ok: false,
@@ -329,6 +504,42 @@ export async function publishBuild(input: {
     };
   }
   return { ok: true, result: body };
+}
+
+/** The website's publish, before DDR-153: the whole build as base64 in one body. */
+async function publishSingleBody(request: PublishRequest): Promise<PublishOutcome> {
+  const { files, record: recordFiles } = request;
+  const payload = JSON.stringify({
+    projectId: request.projectId,
+    repoName: request.repoName,
+    // No `pin`: Cloud mints the review gate at publish and hands it back
+    // (DDR-115). Sending one from here is what put every PIN a creator ever cut
+    // into `freezes.json`, and `freezes.json` is tracked in Git.
+    tag: request.tag,
+    force: request.force === true ? true : undefined,
+    files,
+    // Beside the build, never inside it: the service keeps the two apart so
+    // nothing in the record is ever served as an artifact (DDR-129).
+    record: recordFiles,
+  });
+  // The record is named as the creator knows it, so `decisions/…` is not read
+  // as part of the build.
+  const sent = [
+    ...files,
+    ...(recordFiles ?? []).map((file) => ({ ...file, path: `design/${file.path}` })),
+  ];
+  const payloadBytes = Buffer.byteLength(payload);
+  if (payloadBytes > PUBLISH_BODY_LIMIT) {
+    return { ok: false, refusal: { error: oversizeRefusal(payloadBytes, sent) } };
+  }
+
+  const res = await fetch(`${request.base}/api/cli/publish`, {
+    method: "POST",
+    headers: request.headers,
+    body: payload,
+  });
+  // The host's own 413, if its limit is ever lower than the one above.
+  return readOutcome<PublishResult>(request.base, res, () => oversizeRefusal(payloadBytes, sent));
 }
 
 export interface WithdrawResult {
@@ -362,31 +573,6 @@ export async function withdrawPublished(input: {
     body: JSON.stringify({ projectId: input.projectId, tag: input.tag }),
   });
 
-  const raw = await res.text();
-  let body: (WithdrawResult & PublishRefusal) | undefined;
-  try {
-    body = JSON.parse(raw) as WithdrawResult & PublishRefusal;
-  } catch {
-    body = undefined;
-  }
-
-  if (!res.ok) {
-    if (body && typeof body.error === "string") return { ok: false, refusal: body };
-    const snippet = raw.replace(/\s+/g, " ").trim().slice(0, 300);
-    return {
-      ok: false,
-      refusal: {
-        error:
-          `${base} returned HTTP ${res.status} ${res.statusText}` +
-          (snippet ? ` — ${snippet}` : " with an empty body"),
-      },
-    };
-  }
-  if (!body) {
-    return {
-      ok: false,
-      refusal: { error: `${base} returned HTTP ${res.status} with a body that is not JSON` },
-    };
-  }
-  return { ok: true, result: body };
+  // The same reading publish gives its responses, which this was a copy of (TASK-542).
+  return readOutcome<WithdrawResult>(base, res);
 }

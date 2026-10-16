@@ -21,7 +21,8 @@ models).
 | Surface | Notes |
 | --- | --- |
 | `frozen.design` — the review runtime | Serves published prototypes and the comment API. **The highest-value target**, because it serves user-authored JavaScript to stakeholders who are not the author. |
-| `useforge.design` — the control plane | Accounts, plans, invites, device authorization, publishing. |
+| `app.useforge.design` — the Cloud app and control plane | Accounts, plans, invites, device authorization, publishing. |
+| `useforge.design` — the website | Product information and the website's back office. |
 | `@forgedesign/cli` and the local dashboard | Anything that lets a repository, a record file, or a downloaded artifact execute code or read outside the project directory. |
 
 Out of scope: findings against a prototype somebody built with Forge (that is their code),
@@ -33,17 +34,25 @@ with no working proof.
 These are already filed, so a report about them tells us nothing new — but a way to make
 them *worse* than described is very much worth reporting.
 
-- **A published freeze is unlisted, not private.** `GET /p/<slug>/<tag>/…` authenticates
-  nothing: the PIN currently gates commenting, not viewing. Artifact keys are also
-  guessable, so knowing a prototype id is enough to read it. Treat a published prototype as
-  world-readable to anyone with the URL until this changes.
+- **A published freeze is gated, and the PIN gates viewing.** `GET /p/<slug>/<tag>/…`
+  answers an unlock page until the six-digit PIN is entered; only then is the frozen design
+  served, from the content domain, under a token scoped to that one freeze. The build is
+  stored privately and read only by the review runtime, so there is no second door, and a
+  freeze with no registered gate is refused rather than served. The same holds for the
+  record snapshot a publish stores beside the build: only the concepts whose audience is
+  stakeholders leave the repository, filtered before upload, and none of them is ever
+  served as a page. A PIN pasted beside its link is the same as no PIN, so treat a published
+  prototype as readable by anyone who holds both. Commenting uses the same unlocked session
+  for now; the invited-stakeholder identity that will put a verified name behind every
+  comment is designed and not yet built, so today a comment's author is the label its writer
+  typed.
 - **No rate limiting** on the Cloud endpoints.
 
 ## Design notes that are deliberate
 
 - **The two hosts are separate origins on purpose.** The review runtime serves
   user-authored JavaScript and must never share an origin with a logged-in session. A
-  finding that lets content on `frozen.design` reach a `useforge.design` session is a
+  finding that lets content on `frozen.design` reach an `app.useforge.design` session is a
   serious one.
 - **The CLI never asks you to paste a token.** `forge login` uses a device authorization
   flow; anything that prompts for a secret in a terminal is not us.
@@ -51,7 +60,10 @@ them *worse* than described is very much worth reporting.
   is revocable on its own, so losing a laptop revokes that laptop.
 - **The Cloud API address is read from your own config, never from a repository.** A
   `forge.json` cannot point the CLI at a different host, so cloning a hostile repo does not
-  redirect your token somewhere else.
+  redirect your token somewhere else. The default is `https://app.useforge.design`; the
+  exact old default `https://useforge.design`, with or without a trailing slash, is read as
+  the app host. Other configured addresses stay unchanged, and this migration does not
+  rewrite the config file.
 - **`forge.json` is committed, and three of its fields are commands.**
   `preview.command`, `preview.install` and `build.command` are read from the repository and
   executed — by `forge preview` and by `forge freeze` respectively. Running them is what
