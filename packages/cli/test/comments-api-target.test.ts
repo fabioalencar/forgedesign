@@ -15,8 +15,16 @@ describe("commentsApiFor", () => {
     // The `cloudToken` is what `forge login` writes, and the control plane is
     // the only plane that knows who owns which snapshot.
     expect(
-      commentsApiFor({ cloudToken: "tok-123", cloudApiUrl: "https://useforge.design" }),
-    ).toEqual({ apiUrl: "https://useforge.design/api/cli", apiKey: "tok-123" });
+      commentsApiFor({ cloudToken: "tok-123", cloudApiUrl: "https://app.useforge.design" }),
+    ).toEqual({ apiUrl: "https://app.useforge.design/api/cli", apiKey: "tok-123" });
+  });
+
+  it("follows Cloud to the app host from the address every earlier forge login saved (DDR-158)", () => {
+    for (const saved of ["https://useforge.design", "https://useforge.design/"]) {
+      expect(commentsApiFor({ cloudToken: "t", cloudApiUrl: saved }).apiUrl).toBe(
+        "https://app.useforge.design/api/cli",
+      );
+    }
   });
 
   it("mirrors the review plane's paths under /api/cli, so the client is unchanged", () => {
@@ -28,7 +36,7 @@ describe("commentsApiFor", () => {
   });
 
   it("defaults to the hosted control plane, and tolerates a trailing slash", () => {
-    expect(commentsApiFor({ cloudToken: "t" }).apiUrl).toBe("https://useforge.design/api/cli");
+    expect(commentsApiFor({ cloudToken: "t" }).apiUrl).toBe("https://app.useforge.design/api/cli");
     expect(commentsApiFor({ cloudToken: "t", cloudApiUrl: "https://x.test/" }).apiUrl).toBe(
       "https://x.test/api/cli",
     );

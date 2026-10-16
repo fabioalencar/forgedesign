@@ -1,3 +1,4 @@
+import { CLI_VERSION } from "./version.js";
 // `forge check` (TASK-456, DDR-127): one contract instead of three claims.
 //
 // Three things used to claim "check" and one ran: doctor lints the record,
@@ -40,7 +41,6 @@ const execFileAsync = promisify(execFile);
 
 /** The record's own checker; it needs no configuration and always runs. */
 export const DOCTOR_CHECKER = "doctor";
-const CLI_VERSION = "0.1.0";
 const NAME_RE = /^[a-z0-9][a-z0-9._-]*$/i;
 
 /**

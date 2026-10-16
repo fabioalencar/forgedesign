@@ -41,6 +41,19 @@ forge publish v1            # a review link and PIN for a stakeholder
 forge comments triage v1    # stage their comments for your agent to disposition
 ```
 
+Invited creators sign in at [app.useforge.design](https://app.useforge.design) and find or
+change review PINs on its [Prototypes page](https://app.useforge.design/prototypes).
+
+Starting with **0.1.1**, an unset Cloud address or the old default
+`https://useforge.design` (with or without a trailing slash) uses the app host. Custom
+addresses stay as configured. The move does not rewrite your config or require a new
+login; existing valid tokens continue to work.
+
+Publishing to Cloud uses staged uploads: the CLI declares the build, uploads its files
+directly to storage, and asks Cloud to validate and commit the version. A review becomes
+available after that commit succeeds. Servers that do not advertise staged uploads retain
+the earlier single-request publishing path, with a size check before anything is sent.
+
 `forge --help` lists every command. The format is specified in
 [`spec/format.md`](https://github.com/fabioalencar/forgedesign/blob/main/spec/format.md).
 

@@ -22,6 +22,7 @@ import { registerSkillsCommand } from "./commands/skills.js";
 import { registerStatusCommand } from "./commands/status.js";
 import { registerUpgradeCommand } from "./commands/upgrade.js";
 import { checkStaleBuild, staleMessage } from "./staleness.js";
+import { CLI_VERSION } from "./version.js";
 
 const program = new Command();
 
@@ -30,7 +31,7 @@ program
   .description(
     "The design record: versioning ceremony and stakeholder feedback for AI-built prototypes",
   )
-  .version("0.1.0");
+  .version(CLI_VERSION);
 
 registerInitCommand(program);
 registerDoctorCommand(program);

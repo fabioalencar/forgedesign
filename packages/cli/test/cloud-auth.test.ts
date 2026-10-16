@@ -3,7 +3,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { awaitApproval, pollForToken, whoami } from "../src/cloud-auth.js";
+import { awaitApproval, cloudApiUrl, pollForToken, whoami } from "../src/cloud-auth.js";
 
 // The device authorization flow as the CLI sees it (DDR-075). A real HTTP
 // server rather than a mocked fetch: the states that matter are the ones the
@@ -132,5 +132,31 @@ describe("whoami", () => {
     );
     respond = () => ({ code: 200, body: { email: "a@b.c", plan: "pro" } });
     expect(await whoami()).toEqual({ email: "a@b.c", plan: "pro" });
+  });
+});
+
+describe("cloudApiUrl (DDR-158)", () => {
+  const saved = async (cloudApiUrl?: string) =>
+    fs.writeFile(
+      path.join(sandbox, "config.json"),
+      JSON.stringify({ cloudToken: "t", cloudApiUrl }),
+      "utf8",
+    );
+
+  it("is the app host when nothing is saved", async () => {
+    await saved();
+    expect(await cloudApiUrl()).toBe("https://app.useforge.design");
+  });
+
+  it("reads the address every earlier forge login saved as the app host", async () => {
+    for (const old of ["https://useforge.design", "https://useforge.design/"]) {
+      await saved(old);
+      expect(await cloudApiUrl()).toBe("https://app.useforge.design");
+    }
+  });
+
+  it("leaves any other saved address alone, as someone's own control plane", async () => {
+    await saved("https://cloud.example.com/");
+    expect(await cloudApiUrl()).toBe("https://cloud.example.com");
   });
 });

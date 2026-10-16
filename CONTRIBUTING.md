@@ -40,7 +40,7 @@ pnpm install && pnpm -r build
 Then the whole gate, which is exactly what CI runs:
 
 ```bash
-pnpm -r typecheck && pnpm lint && pnpm -r test && pnpm knip && node packages/cli/dist/index.js doctor .
+pnpm -r typecheck && pnpm lint && pnpm -r test && pnpm knip && pnpm check:versions && node packages/cli/dist/index.js doctor .
 ```
 
 `forge doctor` validates this repository against the format it enforces on users:
@@ -57,8 +57,8 @@ biome invocation from the root covering the whole workspace, not per-package.
   before changing anything the CLI, the skills, or the renderer touch.
 - [`design/brief.md`](design/brief.md) — what this is, who it is for, and where the line
   between this and the paid service falls.
-- [`design/decisions/`](design/decisions/) — every decision made in this repository. There is
-  one so far: the extraction that created it.
+- [`design/decisions/`](design/decisions/) — every decision made in this repository,
+  including the extraction and the shared version for all three packages.
 
 ## Licensing
 

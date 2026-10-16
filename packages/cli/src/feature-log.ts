@@ -1,3 +1,4 @@
+import { CLI_VERSION } from "./version.js";
 // Generating the feature log at freeze time (T-238, spec/format.md §5).
 //
 // "What closed since the previous freeze" has no field to read: a task carries
@@ -406,7 +407,7 @@ export async function generateFeatureLog(
         type: "Feature Log",
         title: "Feature log",
         freeze: latest?.freezeId,
-        generated: { by: "forge-cli/0.1.0", at: new Date().toISOString() },
+        generated: { by: `forge-cli/${CLI_VERSION}`, at: new Date().toISOString() },
       },
       body,
     ),

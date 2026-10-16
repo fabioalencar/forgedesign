@@ -7,11 +7,30 @@
 import { readUserConfig, writeUserConfig } from "./config.js";
 
 /**
- * The control plane — accounts, plans, device authorization (DDR-078). Not the
- * review runtime: that is `frozen.design`, a separate origin because it serves
+ * The control plane — accounts, plans, device authorization (DDR-078), on the
+ * app host since Cloud became its own app (DDR-143, DDR-158). Not the review
+ * runtime: that is `frozen.design`, a separate origin because it serves
  * user-authored JavaScript and must never sit beside a logged-in session.
  */
-export const DEFAULT_CLOUD_API_URL = "https://useforge.design";
+export const DEFAULT_CLOUD_API_URL = "https://app.useforge.design";
+
+/**
+ * Where Cloud's API lived before the move, and what every `forge login` until
+ * then saved into the machine's config (DDR-158). Read as the app host: a
+ * redirect could not carry the machine's token to another origin, and asking
+ * every creator to edit a config file is the move costing them something.
+ */
+const MOVED_FROM = "https://useforge.design";
+
+/**
+ * The Cloud API base for a configured value: the app host when nothing is
+ * configured or when the old default is, and any other value as it is, since
+ * that is someone running their own control plane.
+ */
+export function cloudBase(configured: string | undefined): string {
+  const base = (configured ?? DEFAULT_CLOUD_API_URL).replace(/\/+$/, "");
+  return base === MOVED_FROM ? DEFAULT_CLOUD_API_URL : base;
+}
 
 /**
  * Forge Cloud is not open for sign-up yet (DDR-137), and the open-source CLI
@@ -43,16 +62,16 @@ export type PollOutcome =
   | { status: "unknown" };
 
 export async function cloudApiUrl(): Promise<string> {
-  const configured = (await readUserConfig()).cloudApiUrl;
-  return (configured ?? DEFAULT_CLOUD_API_URL).replace(/\/$/, "");
+  return cloudBase((await readUserConfig()).cloudApiUrl);
 }
 
-function url(base: string, path: string): string {
-  return `${base.replace(/\/$/, "")}${path}`;
+/** A Cloud API path under a base URL, however the base was written (TASK-542). */
+export function apiUrl(base: string, pathname: string): string {
+  return `${base.replace(/\/$/, "")}${pathname}`;
 }
 
 export async function requestDeviceCode(base: string): Promise<DeviceCodeGrant> {
-  const res = await fetch(url(base, "/api/cli/device"), { method: "POST" });
+  const res = await fetch(apiUrl(base, "/api/cli/device"), { method: "POST" });
   if (!res.ok) {
     throw new Error(`could not start sign-in (${res.status}) — is ${base} the right Cloud URL?`);
   }
@@ -60,7 +79,7 @@ export async function requestDeviceCode(base: string): Promise<DeviceCodeGrant> 
 }
 
 export async function pollForToken(base: string, deviceCode: string): Promise<PollOutcome> {
-  const res = await fetch(url(base, "/api/cli/token"), {
+  const res = await fetch(apiUrl(base, "/api/cli/token"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ deviceCode }),
@@ -102,7 +121,7 @@ export async function whoami(): Promise<CloudIdentity | null> {
   const config = await readUserConfig();
   if (!config.cloudToken) return null;
   const base = await cloudApiUrl();
-  const res = await fetch(url(base, "/api/cli/me"), {
+  const res = await fetch(apiUrl(base, "/api/cli/me"), {
     headers: { Authorization: `Bearer ${config.cloudToken}` },
   });
   if (!res.ok) return null;

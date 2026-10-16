@@ -79,6 +79,12 @@ and the comment service behind it are a separate commercial service,
 only and no open sign-up.** Its commands (`forge login`, `forge publish`) are in the CLI and
 listed apart in `forge --help`; nothing else in this repository needs them.
 
+Invited creators use the [Cloud app](https://app.useforge.design); review PINs live on
+its [Prototypes page](https://app.useforge.design/prototypes). Starting with
+`@forgedesign/cli` **0.1.1**, the CLI follows Cloud automatically, including when an earlier
+login saved `https://useforge.design`, and keeps custom Cloud addresses unchanged. Upgrade
+from `0.1.0` with `npm install -g @forgedesign/cli@latest`; its website API has retired.
+
 The line is drawn at **serving, not capability**. Everything that produces a record is here
 and is Apache-2.0, and the whole loop runs without the service: a freeze is a portable
 directory of static files you can host anywhere, and stakeholder feedback comes back into
