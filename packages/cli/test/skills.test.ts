@@ -54,6 +54,30 @@ describe("installSkills", () => {
     expect(triage).toContain("forge comments triage apply");
   });
 
+  it("keeps the frontmatter first, so agents still read each skill's description", async () => {
+    // With the marker above `---`, Claude Code took the marker line as the
+    // description and never picked a forge-* skill up on its own.
+    await installSkills(root);
+    for (const relPath of Object.keys(skillFiles())) {
+      const body = await read(path.join(".claude/skills", relPath));
+      const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(body);
+      expect(frontmatter, relPath).not.toBeNull();
+      expect(frontmatter?.[1]).toMatch(/^description: (?!<!--)\S/m);
+      expect(frontmatter?.[1]).not.toContain(SKILL_MARKER);
+      expect(body.slice(frontmatter?.[0].length).startsWith(SKILL_MARKER)).toBe(true);
+    }
+  });
+
+  it("repairs an install that put the marker above the frontmatter", async () => {
+    await installSkills(root);
+    const target = path.join(root, ".claude/skills/forge-ddr/SKILL.md");
+    await fs.writeFile(target, `${SKILL_MARKER}\n${skillFiles()["forge-ddr/SKILL.md"]}`, "utf8");
+
+    const result = await installSkills(root);
+    expect(result.files.find((f) => f.relPath.includes("forge-ddr"))?.outcome).toBe("updated");
+    expect(await read(".claude/skills/forge-ddr/SKILL.md")).toMatch(/^---\nname: forge-ddr\n/);
+  });
+
   it("replaces its own earlier output, so skills track the CLI they call", async () => {
     await installSkills(root);
     const target = path.join(root, ".claude/skills/forge-triage/SKILL.md");
