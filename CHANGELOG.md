@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 — 2026-10-29
+
+- `forge skills install` writes its marker below each skill's frontmatter instead of above it. With the marker first, Claude Code read the marker line as the skill's description and never picked a `forge-*` skill up on its own; the skills only ran when called by name. Run `forge skills install` again (with `--home` if you installed that way) to repair skills installed by 0.1.0 or 0.1.1.
+
+All three packages (`cli`, `format`, and `scenarios`) use 0.1.2. Only the CLI changed. The Design Record format version remains 0.2.
+
 ## 0.1.1 — 2026-10-16
 
 - Restore Forge Cloud connectivity after its move to `app.useforge.design`. The CLI also reads a saved `https://useforge.design` as the app host, keeps the existing token, and preserves custom Cloud addresses.

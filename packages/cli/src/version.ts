@@ -6,4 +6,4 @@
  * It was written out three times beside `package.json`'s, so a release would
  * have had to find all four. A test holds this one equal to the package's.
  */
-export const CLI_VERSION = "0.1.1";
+export const CLI_VERSION = "0.1.2";
