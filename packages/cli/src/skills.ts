@@ -41,8 +41,16 @@ export function skillFiles(): Record<string, string> {
   );
 }
 
+/**
+ * Puts the marker below a skill's frontmatter, never above it: an agent reads
+ * a skill's name and description only from a file that opens with `---`, and
+ * with the marker first it takes the marker line as the description.
+ */
 export function withMarker(body: string): string {
-  return `${SKILL_MARKER}\n${body.startsWith("---") ? body : `\n${body}`}`;
+  const frontmatter = /^---\n[\s\S]*?\n---(?:\n|$)/.exec(body)?.[0];
+  if (!frontmatter) return `${SKILL_MARKER}\n\n${body}`;
+  const rest = body.slice(frontmatter.length);
+  return `${frontmatter.endsWith("\n") ? frontmatter : `${frontmatter}\n`}${SKILL_MARKER}\n${rest}`;
 }
 
 async function readIfExists(absPath: string): Promise<string | null> {
