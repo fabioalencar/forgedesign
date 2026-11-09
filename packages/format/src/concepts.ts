@@ -10,6 +10,7 @@
 import {
   AUDIENCES,
   type Audience,
+  CHANGE_STATUSES,
   DDR_BASE_STATUSES,
   DECISION_REACHES,
   DEFAULT_DECISION_REACH,
@@ -44,6 +45,7 @@ export const CONCEPT_TYPES = [
   "Scenario",
   "Check",
   "Page Manifest",
+  "Change",
 ] as const;
 
 export type ConceptType = (typeof CONCEPT_TYPES)[number];
@@ -62,6 +64,7 @@ export const ID_BEARING_TYPES: Partial<Record<ConceptType, string>> = {
   Stakeholder: "STAKEHOLDER",
   Flow: "FLOW",
   Scenario: "SCENARIO",
+  Change: "CHANGE",
 };
 
 /**
@@ -75,6 +78,7 @@ export const DOMAIN_STATUS_FIELDS: Partial<
   Decision: { field: "decision_status", values: DDR_BASE_STATUSES },
   Feedback: { field: "feedback_status", values: FEEDBACK_STATUSES },
   Question: { field: "question_status", values: QUESTION_STATUSES },
+  Change: { field: "change_status", values: CHANGE_STATUSES },
 };
 
 /** Which directory under the bundle root holds each ID-bearing type (spec §2). */
@@ -89,6 +93,7 @@ export const TYPE_DIRECTORIES: Partial<Record<ConceptType, string>> = {
   Flow: "flows",
   Scenario: "scenarios",
   Check: "checks",
+  Change: "changes",
 };
 
 /**
@@ -128,6 +133,10 @@ export const DEFAULT_AUDIENCES: Record<ConceptType, Audience> = {
   // Which screens exist and what each is for — the same audience as the flows
   // that cross them (DDR-130).
   "Page Manifest": "stakeholders",
+  // What a stakeholder is told changed, or is coming, in the creator's words
+  // (DDR-176). Written for that reader, so it crosses unless the file says
+  // otherwise; an exploration not ready to be named is flipped to `owner`.
+  Change: "stakeholders",
 };
 
 /** Bundle-root files and the type each must declare (spec §2). */

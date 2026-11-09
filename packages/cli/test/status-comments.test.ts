@@ -3,9 +3,9 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initProject } from "../src/commands/init.js";
-import { collectStatus, formatStatus } from "../src/commands/status.js";
 import { projectUnfetchedCount } from "../src/comments-client.js";
+import { initProject } from "../src/init.js";
+import { collectStatus, formatStatus } from "../src/status.js";
 
 let sandbox: string;
 let server: http.Server;
@@ -111,6 +111,48 @@ describe("projectUnfetchedCount", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     expect(down).toEqual({ kind: "unreachable" });
   });
+});
+
+describe("a comment API that answers late (TASK-531)", () => {
+  async function slowServer(delayMs: number): Promise<void> {
+    await new Promise<void>((resolve, reject) =>
+      server.close((err) => (err ? reject(err) : resolve())),
+    );
+    server = http.createServer((_req, res) => {
+      setTimeout(() => {
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ comments: [{ id: 1 }] }));
+      }, delayMs);
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(Number(new URL(apiUrl).port), "127.0.0.1", resolve),
+    );
+  }
+
+  it("says it timed out, not that the URL or key is wrong", async () => {
+    await configure();
+    await makeFrozenRepo(["snap-a"]);
+    await slowServer(400);
+
+    expect(await projectUnfetchedCount(path.join(sandbox, "demo"), 100)).toEqual({
+      kind: "timed-out",
+      afterMs: 100,
+    });
+    const statuses = await collectStatus({ countTimeoutMs: 100 });
+    const text = formatStatus(statuses);
+    expect(text).toContain("unfetched comments: unknown (no answer within 0.1 s");
+    expect(text).not.toContain("check the URL and key");
+  });
+
+  it("waits long enough by default for a service that takes seconds", async () => {
+    await configure();
+    await makeFrozenRepo(["snap-a"]);
+    // Slower than the old 1.5 s deadline, inside the new one.
+    await slowServer(1800);
+
+    const statuses = await collectStatus();
+    expect(statuses[0]?.unfetchedComments).toEqual({ kind: "count", count: 1 });
+  }, 10_000);
 });
 
 describe("forge status with the comment API configured", () => {

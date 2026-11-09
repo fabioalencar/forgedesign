@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { writeFileAtomic } from "./atomic-write.js";
+import { isJsonObject, readJsonFile } from "./json-file.js";
 
 /** Repo-committed identity: forge.json at the repo root (DDR-011). */
 export interface ProjectFile {
@@ -56,22 +58,14 @@ export function projectFilePath(repoRoot: string): string {
   return path.join(repoRoot, "forge.json");
 }
 
+/**
+ * `readRecordVersion` gives the friendly manifest-invalid message for the
+ * commands that check it first; this reader is reached by the ones that go
+ * straight for the projectId.
+ */
 export async function readProjectFile(repoRoot: string): Promise<ProjectFile> {
-  try {
-    const parsed = JSON.parse(await fs.readFile(projectFilePath(repoRoot), "utf8")) as ProjectFile;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    // `readRecordVersion` gives the friendly manifest-invalid message for the
-    // commands that check it first; this reader is reached by the ones that go
-    // straight for the projectId, so it must not crash with a bare parser line.
-    if (error instanceof SyntaxError) {
-      throw new Error(
-        `${projectFilePath(repoRoot)} is not valid JSON — fix or delete it (${error.message})`,
-      );
-    }
-    throw error;
-  }
+  const parsed = await readJsonFile(projectFilePath(repoRoot));
+  return isJsonObject(parsed) ? (parsed as ProjectFile) : {};
 }
 
 /**
@@ -89,7 +83,7 @@ export async function ensureProjectId(
     return { projectId: parsed.projectId, created: false, fileCreated: false };
   }
   const projectId = randomUUID();
-  await fs.writeFile(file, `${JSON.stringify({ ...parsed, projectId }, null, 2)}\n`, "utf8");
+  await writeFileAtomic(file, `${JSON.stringify({ ...parsed, projectId }, null, 2)}\n`);
   // `created` says an id was minted; `fileCreated` says forge.json did not
   // exist at all. Conflating them let a failed freeze delete a manifest the
   // user had written — build config and all — because it had only *added* a
@@ -108,5 +102,5 @@ export async function revertProjectId(repoRoot: string, before: string | null): 
     await fs.rm(file, { force: true });
     return;
   }
-  await fs.writeFile(file, before, "utf8");
+  await writeFileAtomic(file, before);
 }

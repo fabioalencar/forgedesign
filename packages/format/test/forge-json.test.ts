@@ -3,6 +3,7 @@ import {
   buildForgeManifest,
   isSupportedFormatVersion,
   parseForgeJson,
+  recordRootOf,
   serializeForgeJson,
   V02_FORMAT_VERSION,
 } from "../src/forge-json.js";
@@ -39,5 +40,28 @@ describe("isSupportedFormatVersion", () => {
   it("rejects an unknown or missing version", () => {
     expect(isSupportedFormatVersion("9.9")).toBe(false);
     expect(isSupportedFormatVersion(undefined)).toBe(false);
+  });
+});
+
+describe("recordRootOf (TASK-528)", () => {
+  it("returns the bundle directory a manifest names, and design when it names none", () => {
+    expect(recordRootOf({ recordRoot: "design" })).toBe("design");
+    expect(recordRootOf({ recordRoot: "docs/record" })).toBe("docs/record");
+    expect(recordRootOf({ recordRoot: "./design/" })).toBe("./design/");
+    expect(recordRootOf({})).toBe("design");
+    expect(recordRootOf({ recordRoot: 7 })).toBe("design");
+  });
+
+  it("refuses a recordRoot that leaves the repository", () => {
+    for (const recordRoot of [
+      "..",
+      "../shared",
+      "design/../../x",
+      "/etc",
+      "C:\\record",
+      "..\\up",
+    ]) {
+      expect(recordRootOf({ recordRoot })).toBeNull();
+    }
   });
 });

@@ -1,12 +1,16 @@
 // Handoff pack generation (spec §2 step 7): one content model assembled from
 // the repo's artifacts, rendered to both PDF (pdfkit) and docx (docx) into
 // handoff/<tag>/ (DDR-012).
+//
+// The two renderers load their libraries when they run, not when this module
+// does (TASK-530). The bin imports every command up front, freeze imports this,
+// and pdfkit with its font stack plus docx were ~40 ms of every `forge`
+// invocation — `--version` included — for a pack only freeze writes.
 
 import { createWriteStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { decisionParagraph, type ParsedConcept, scanBundle } from "@forgedesign/format";
-import { Document, ExternalHyperlink, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
-import PDFDocument from "pdfkit";
+import type { Paragraph as DocxParagraph } from "docx";
 import { bundleRootOf } from "./bundle-index.js";
 import { decisionAt } from "./feature-log.js";
 import { readFreezes } from "./freezes.js";
@@ -243,6 +247,7 @@ function checkLine(check: CheckSummary): string {
 // --- renderers ---
 
 async function renderPdf(content: HandoffContent, file: string): Promise<void> {
+  const { default: PDFDocument } = await import("pdfkit");
   await new Promise<void>((resolve, reject) => {
     const doc = new PDFDocument({
       margin: 54,
@@ -307,7 +312,10 @@ async function renderPdf(content: HandoffContent, file: string): Promise<void> {
 }
 
 async function renderDocx(content: HandoffContent, file: string): Promise<void> {
-  const children: Paragraph[] = [];
+  const { Document, ExternalHyperlink, HeadingLevel, Packer, Paragraph, TextRun } = await import(
+    "docx"
+  );
+  const children: DocxParagraph[] = [];
   const heading = (text: string) =>
     children.push(new Paragraph({ text, heading: HeadingLevel.HEADING_1 }));
   const body = (text: string) => children.push(new Paragraph({ text }));

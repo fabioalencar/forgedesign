@@ -21,6 +21,7 @@ import {
   scanBundle,
   withFrontmatter,
 } from "@forgedesign/format";
+import { writeNewFile } from "./atomic-write.js";
 import { writeBundleIndex } from "./bundle-index.js";
 import { todayIsoDate } from "./freezes.js";
 import { requireCurrentRecord } from "./record-version.js";
@@ -194,7 +195,7 @@ export async function applyDdr(root: string, slug: string): Promise<ApplyDdrResu
   const contents = buildDdrConcept(id, staged, status, date);
 
   await fs.mkdir(path.join(root, decisionsDir), { recursive: true });
-  await fs.writeFile(path.join(root, relPath), contents, "utf8");
+  await writeNewFile(path.join(root, relPath), contents);
   // The index is derived from the concept listing, so the writer that adds a
   // concept is the one that keeps it true (T-300).
   await writeBundleIndex(root);

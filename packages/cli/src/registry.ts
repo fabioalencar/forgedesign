@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { writeFileAtomic } from "./atomic-write.js";
+import { isJsonObject, readJsonFile } from "./json-file.js";
 
 export interface ProjectEntry {
   name: string;
@@ -21,28 +23,16 @@ export function registryPath(): string {
   return path.join(forgeHome(), "projects.json");
 }
 
+/** Read by `status`, the dashboard's project list, and every registered-project path. */
 export async function readRegistry(): Promise<Registry> {
-  try {
-    const raw = await fs.readFile(registryPath(), "utf8");
-    const parsed = JSON.parse(raw) as Partial<Registry>;
-    return { projects: Array.isArray(parsed.projects) ? parsed.projects : [] };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { projects: [] };
-    }
-    // Read by `status`, the dashboard's project list, and every registered-project
-    // path — a malformed `projects.json` must name itself, not crash them all with
-    // a bare parser line (TASK-411).
-    if (error instanceof SyntaxError) {
-      throw new Error(`${registryPath()} is not valid JSON — fix or delete it (${error.message})`);
-    }
-    throw error;
-  }
+  const parsed = await readJsonFile(registryPath());
+  const projects = isJsonObject(parsed) ? parsed.projects : undefined;
+  return { projects: Array.isArray(projects) ? (projects as ProjectEntry[]) : [] };
 }
 
 async function writeRegistry(registry: Registry): Promise<void> {
   await fs.mkdir(forgeHome(), { recursive: true });
-  await fs.writeFile(registryPath(), `${JSON.stringify(registry, null, 2)}\n`, "utf8");
+  await writeFileAtomic(registryPath(), `${JSON.stringify(registry, null, 2)}\n`);
 }
 
 /** Upserts by absolute path, so re-running `forge init` never duplicates an entry. */

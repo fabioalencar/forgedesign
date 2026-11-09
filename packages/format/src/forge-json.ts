@@ -1,5 +1,8 @@
 // forge.json (spec/format.md §2, §7) — project manifest, carries formatVersion.
 
+import path from "node:path";
+import { BUNDLE_DIR } from "./bundle.js";
+
 /** The root-file layout that predates the OKF bundle. Still read, no longer written. */
 export const V01_FORMAT_VERSION = "0.1";
 /** The OKF-conformant bundle format (spec/format.md v0.2). */
@@ -28,6 +31,30 @@ export function parseForgeJson(text: string): ForgeManifest {
     throw new Error("forge.json must be a JSON object");
   }
   return parsed as ForgeManifest;
+}
+
+/**
+ * The bundle directory a manifest names, relative to the repo root — `design`
+ * when it names none — or null when `recordRoot` would put the record outside
+ * the repository (TASK-528).
+ *
+ * The record is the repo (spec §1 principle 1), and every reader joins this
+ * value to the repo root and then writes beneath it: the index, the ledger,
+ * concepts from `forge add` and triage. So `"recordRoot": ".."` in a committed
+ * forge.json pointed all of those writes at the directory above the repo. One
+ * reader, so the CLI and the dashboard cannot disagree about where the record
+ * is.
+ */
+export function recordRootOf(manifest: { readonly [key: string]: unknown }): string | null {
+  const value = manifest.recordRoot;
+  if (typeof value !== "string") return BUNDLE_DIR;
+  const normalized = path.posix.normalize(value.replaceAll("\\", "/"));
+  const outside =
+    path.posix.isAbsolute(normalized) ||
+    path.win32.isAbsolute(value) ||
+    normalized === ".." ||
+    normalized.startsWith("../");
+  return outside ? null : value;
 }
 
 export function buildForgeManifest(overrides: Partial<ForgeManifest> = {}): ForgeManifest {

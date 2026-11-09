@@ -1,12 +1,12 @@
 ---
 name: forge-intake
-description: Classify a staged transcript, meeting note, or other raw context into candidate tasks/decisions/artifacts for the design record. Use when the user asks to "intake" a transcript, meeting note, or other context source, or points you at a file staged under .forge/intake/.
+description: Classify a staged transcript, meeting note, or other raw context into candidate tasks and decisions for the design record. Use when the user asks to "intake" a transcript, meeting note, or other context source, or points you at a file staged under .forge/intake/.
 ---
 
 # forge-intake
 
 Turns raw context (a call transcript, meeting notes, a long chat log) into reviewable
-candidates: `TASK-###`s for the task ledger, DDR stubs for decisions/, or artifact requests. This
+candidates: `TASK-###`s for the task ledger, and decisions staged for `forge ddr apply`. This
 skill classifies; it never promotes anything into the record itself — a human reviews and
 accepts each candidate individually afterward (`acceptIntakeItem`, e.g. from the dashboard
 timeline). `forge intake apply` is the only thing that turns your classification into a
@@ -43,11 +43,11 @@ the record is what every later agent session reads for context.
    be what `apply` will check against.
 
 3. **Classify.** For each candidate worth surfacing, decide:
-   - `type`: `"task"` (something to do), `"ddr"` (a decision that was made or needs to be
-     — this stages a stub only; the `forge-ddr` skill fills in the real Why/Alternatives later),
-     or `"artifact"` (a deliverable request — user-flows, journey-maps,
-     service-blueprints, site-audits, personas, competitive-analysis, user-stories,
-     data-model, or process-flow).
+   - `type`: `"task"` (something to do — a deliverable someone asked for, like a journey
+     map or a set of personas, is a task too), or `"ddr"` (a decision that was made or needs
+     to be). Accepting a `ddr` stages `.forge/ddr/<slug>.json` with the title, quote and
+     source and an empty decision and why, which the `forge-ddr` skill fills before
+     `forge ddr apply` will take it.
    - `title` — short, specific, **120 characters or fewer**.
    - `quote` — **copied verbatim, character-for-character, from the staged source.**
      `forge intake apply` drops any item whose quote isn't an exact substring of the source
@@ -55,7 +55,6 @@ the record is what every later agent session reads for context.
      can't find a clean verbatim quote for something, either search harder in the source
      text or leave it out; never approximate one.
    - `notes` (optional) — your own gloss, clearly distinguished from the quote itself.
-   - `artifactType` — required, and only, when `type` is `"artifact"`.
 
    Don't force everything into a candidate. A transcript's small talk, tangents, and
    already-tracked topics don't need one.
@@ -66,8 +65,7 @@ the record is what every later agent session reads for context.
    {
      "items": [
        { "type": "task", "title": "...", "quote": "...", "notes": "..." },
-       { "type": "ddr", "title": "...", "quote": "..." },
-       { "type": "artifact", "title": "...", "quote": "...", "artifactType": "user-flows" }
+       { "type": "ddr", "title": "...", "quote": "..." }
      ]
    }
    ```
@@ -82,7 +80,7 @@ the record is what every later agent session reads for context.
    acknowledging the source might be incomplete). This writes `proposal.md` for human
    review and drops any item whose quote didn't verify — watch the command's output for
    `dropped an unverifiable item` and tell the user if anything you expected to survive
-   didn't.
+   didn't. An item typed `artifact` is dropped too; intake no longer files them.
 
 6. **Hand it back.** Tell the user what was staged and where to review it (the dashboard
    timeline, or `.forge/intake/<id>/proposal.md`) — you're done once the proposal is

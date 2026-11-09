@@ -3,8 +3,8 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ensureExplore, mergeExplore, startExplore } from "../src/commands/explore.js";
-import { initProject } from "../src/commands/init.js";
+import { ensureExplore, mergeExplore, startExplore } from "../src/explore.js";
+import { initProject } from "../src/init.js";
 
 let sandbox: string;
 let repo: string;

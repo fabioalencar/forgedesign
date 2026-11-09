@@ -10,6 +10,7 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { writeBundleIndex } from "../src/bundle-index.js";
 import { runDoctor } from "../src/doctor.js";
 
 let root: string;
@@ -90,6 +91,24 @@ describe("a record that is behind (exit 1, one finding)", () => {
     expect(result.findings[0]?.rule).toBe("format-version");
     expect(result.findings[0]?.message).toContain("newer Forge");
     expect(result.findings[0]?.message).not.toContain("forge upgrade");
+  });
+});
+
+describe("a recordRoot outside the repository (TASK-528)", () => {
+  it("is a finding of its own, and no writer follows it out", async () => {
+    // The repo is a directory inside root, so ".." is root itself.
+    const repo = path.join(root, "repo");
+    await write("repo/forge.json", JSON.stringify({ formatVersion: "0.2", recordRoot: ".." }));
+    await write("brief.md", "---\ntype: Brief\ntitle: Brief\n---\nOutside the repo.\n");
+
+    const result = await runDoctor(repo);
+    expect(result.exitCode).toBe(1);
+    expect(result.findings[0]?.rule).toBe("record-root");
+    expect(result.findings[0]?.message).toContain("outside the repository");
+
+    // The index writer runs inside freeze, check, add and triage.
+    expect((await writeBundleIndex(repo)).path).toBeNull();
+    await expect(fs.access(path.join(root, "index.md"))).rejects.toThrow();
   });
 });
 

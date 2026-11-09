@@ -2,6 +2,13 @@ import path from "node:path";
 import type { Command } from "commander";
 import { prototypeOutputDir } from "../build.js";
 import { bundleRootOf } from "../bundle-index.js";
+import {
+  CAPTURE_LIMIT,
+  type CaptureResult,
+  collectCaptures,
+  describeCaptures,
+} from "../capture.js";
+import { CliError } from "../cli-error.js";
 import { CLOUD_HELP_GROUP } from "../cloud-auth.js";
 import { readFreezes, setFreezeSnapshotId } from "../freezes.js";
 import { git, repoRoot } from "../git.js";
@@ -19,7 +26,11 @@ export function registerPublishCommand(program: Command): void {
       "publish even if the build looks unsafe — a secret, or files swept in by mistake (.git, node_modules, .env)",
       false,
     )
-    .action(async (tag: string, options: { force: boolean }) => {
+    .option(
+      "--no-captures",
+      "skip the screenshot of each route the changelog compares across versions (DDR-177)",
+    )
+    .action(async (tag: string, options: { force: boolean; captures: boolean }) => {
       const root = (await repoRoot(process.cwd())) ?? process.cwd();
 
       const freezes = await readFreezes(root).catch(() => []);
@@ -27,31 +38,25 @@ export function registerPublishCommand(program: Command): void {
       if (!freeze) {
         // Publishing something that was never frozen would host a build with no
         // commit behind it — the opposite of what a freeze is for.
-        console.error(
+        throw new CliError(
           `forge publish: no freeze tagged "${tag}" — run \`forge freeze ${tag}\` first.`,
         );
-        process.exitCode = 1;
-        return;
       }
 
       const projectId = (await readProjectFile(root)).projectId;
       if (typeof projectId !== "string" || !projectId) {
-        console.error(
+        throw new CliError(
           "forge publish: this repo has no projectId in forge.json — freeze once first.",
         );
-        process.exitCode = 1;
-        return;
       }
 
       const buildDir = await prototypeOutputDir(root);
       if (!buildDir) {
-        console.error(
+        throw new CliError(
           'forge publish: forge.json declares no "build" — there is nothing to host.\n' +
             "Declare how this project builds, then freeze and publish again:\n" +
             '  "build": { "command": "npm run build", "output": "dist" }',
         );
-        process.exitCode = 1;
-        return;
       }
 
       // The record goes with the build (DDR-129) — the concepts stakeholders
@@ -60,10 +65,31 @@ export function registerPublishCommand(program: Command): void {
       const recordRoot = await bundleRootOf(root);
       const record = recordRoot === null ? undefined : await collectRecord(root, tag, recordRoot);
 
+      // The freeze's own words, from its annotated tag, which Cloud shows beside
+      // the version. A tag without a message publishes without one.
       const message =
         (
           await git(root, ["tag", "-l", "--format=%(contents:subject)", tag]).catch(() => "")
         ).trim() || undefined;
+
+      // One screenshot per route, for the changelog's before and after
+      // (DDR-177). Taken here from the build on disk; never a reason the
+      // publish fails, and skipped on request.
+      let captures: CaptureResult | undefined;
+      if (options.captures !== false) {
+        captures = await collectCaptures(buildDir, {
+          projectRoot: root,
+          onRoute: (route, index, count) => {
+            if (index === 0) {
+              console.log(
+                `Capturing ${count} route(s) for the changelog (at most ${CAPTURE_LIMIT})…`,
+              );
+            }
+            if (count > 10 && (index + 1) % 10 === 0)
+              console.log(`  ${index + 1}/${count} ${route}`);
+          },
+        });
+      }
 
       console.log(`Publishing ${tag}…`);
       const outcome = await publishBuild({
@@ -74,12 +100,11 @@ export function registerPublishCommand(program: Command): void {
         force: options.force,
         record,
         message,
+        captures: captures?.files,
       });
 
       if (!outcome.ok) {
-        console.error(`\nforge publish: ${outcome.refusal.error}`);
-        process.exitCode = 1;
-        return;
+        throw new CliError(`\nforge publish: ${outcome.refusal.error}`);
       }
 
       // Record where the gate landed. The control plane mints the snapshot now
@@ -122,6 +147,12 @@ export function registerPublishCommand(program: Command): void {
         }
       }
 
+      if (captures) {
+        for (const line of describeCaptures(captures, outcome.result.captureCount)) {
+          console.log(`  ${line}`);
+        }
+      }
+
       // Shown here and nowhere else on this machine (TASK-447, DDR-115). It is
       // deliberately not written to `freezes.json`, which is tracked in Git —
       // so the sentence has to say where it lives instead, or the next question
@@ -149,18 +180,14 @@ export function registerPublishCommand(program: Command): void {
       const root = (await repoRoot(process.cwd())) ?? process.cwd();
       const projectId = (await readProjectFile(root)).projectId;
       if (typeof projectId !== "string" || !projectId) {
-        console.error(
+        throw new CliError(
           "forge unpublish: this repo has no projectId in forge.json — nothing was published from here.",
         );
-        process.exitCode = 1;
-        return;
       }
 
       const outcome = await withdrawPublished({ projectId, tag });
       if (!outcome.ok) {
-        console.error(`forge unpublish: ${outcome.refusal.error}`);
-        process.exitCode = 1;
-        return;
+        throw new CliError(`forge unpublish: ${outcome.refusal.error}`);
       }
 
       if (outcome.result.alreadyWithdrawn) {

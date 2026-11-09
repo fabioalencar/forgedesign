@@ -3,8 +3,9 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyTriage, stageTriage } from "../src/commands/comments.js";
-import { initProject } from "../src/commands/init.js";
+import { applyTriage, stageTriage } from "../src/comments.js";
+import { todayIsoDate } from "../src/freezes.js";
+import { initProject } from "../src/init.js";
 
 const SNAPSHOT_ID = "3b241101-e2bb-4255-8caf-4136c566a962";
 
@@ -129,7 +130,7 @@ describe("comment triage (stage/apply, spec/format.md)", () => {
   it("is a no-op when there is nothing to triage", async () => {
     const repo = await makeRepo();
     const result = await stageTriage({ tag: "alpha", cwd: repo });
-    expect(result).toEqual({ staged: null, count: 0 });
+    expect(result).toEqual({ staged: null, count: 0, withdrawn: [] });
     await expect(fs.access(path.join(repo, ".forge/triage"))).rejects.toThrow();
   });
 
@@ -272,7 +273,7 @@ describe("comment triage (stage/apply, spec/format.md)", () => {
     await applyTriage({ tag: "alpha", cwd: repo });
 
     const todos = await readTodos(repo);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIsoDate();
     expect(todos).toContain(`opened: ${today}`);
   });
 
@@ -289,7 +290,7 @@ describe("comment triage (stage/apply, spec/format.md)", () => {
 
     await applyTriage({ tag: "alpha", cwd: repo });
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIsoDate();
     expect(await readFeedback(repo, "FEEDBACK-001")).toContain(`date: ${today}`);
     expect(await readFeedback(repo, "FEEDBACK-002")).toContain(`date: ${today}`);
   });
@@ -507,5 +508,195 @@ describe("comment triage (stage/apply, spec/format.md)", () => {
     expect(result.skipped).toEqual([forgotten.id]);
     expect(result.feedbackIds).toHaveLength(1);
     expect(markFetchedCalls).toHaveLength(1); // still an at-least-once batch mark
+  });
+});
+
+describe("a comment its author withdrew (TASK-562, DDR-165)", () => {
+  it("reaches triage after the pull, naming what it became, and changes nothing in the record", async () => {
+    const repo = await makeRepo();
+    const heavy = comment({ body: "the header feels heavy" });
+    served = [heavy];
+    await stageTriage({ tag: "alpha", cwd: repo });
+    await stageProposal(repo, "alpha", [
+      { commentId: heavy.id, disposition: "accepted", taskTitle: "Reduce header weight" },
+    ]);
+    await applyTriage({ tag: "alpha", cwd: repo });
+    const filed = await readFeedback(repo, "FEEDBACK-001");
+    const ledger = await readTodos(repo);
+
+    // The stakeholder deletes it after the pull: the service withdraws it and
+    // offers it again as unfetched, with its words gone.
+    served = [{ ...heavy, body: "", status: "withdrawn" }];
+    const lines: string[] = [];
+    const staged = await stageTriage({ tag: "alpha", cwd: repo, log: (l) => lines.push(l) });
+    expect(staged.withdrawn).toEqual([{ commentId: heavy.id, conceptId: "FEEDBACK-001" }]);
+    expect(lines.join("\n")).toContain(`FEEDBACK-001 — comment ${heavy.id} was withdrawn`);
+
+    // A proposal that dispositions it anyway is not obeyed: there is nothing to file.
+    await stageProposal(repo, "alpha", [
+      { commentId: heavy.id, disposition: "accepted", taskTitle: "Again" },
+    ]);
+    const applied = await applyTriage({ tag: "alpha", cwd: repo, log: (l) => lines.push(l) });
+    expect(applied.withdrawn).toEqual([{ commentId: heavy.id, conceptId: "FEEDBACK-001" }]);
+    expect(applied.feedbackIds).toEqual([]);
+    expect(applied.taskIds).toEqual([]);
+    expect(lines.join("\n")).toMatch(/ignored the disposition .* its author withdrew it/);
+
+    // Nothing in the record moved, and nothing new appeared.
+    expect(await readFeedback(repo, "FEEDBACK-001")).toBe(filed);
+    expect(await readTodos(repo)).toBe(ledger);
+    await expect(readFeedback(repo, "FEEDBACK-002")).rejects.toThrow();
+    const summary = await fs.readFile(path.join(repo, ".forge/triage/alpha/proposal.md"), "utf8");
+    expect(summary).toContain("1 comment(s) withdrawn by their authors, nothing written:");
+    expect(summary).toContain("FEEDBACK-001");
+
+    // Marked fetched again, so the next pull does not carry it a third time.
+    expect(markFetchedCalls.at(-1)).toEqual({ snapshotId: SNAPSHOT_ID, commentIds: [heavy.id] });
+  });
+
+  it("files nothing for one withdrawn before it was ever pulled, and still files its replies", async () => {
+    const repo = await makeRepo();
+    const gone = comment({ body: "", status: "withdrawn" });
+    const reply = comment({ parent_id: gone.id, author_label: "CEO", body: "agreed though" });
+    served = [gone, reply];
+    const staged = await stageTriage({ tag: "alpha", cwd: repo });
+    expect(staged.withdrawn).toEqual([{ commentId: gone.id, conceptId: null }]);
+
+    await stageProposal(repo, "alpha", [{ commentId: reply.id, disposition: "pending" }]);
+    const applied = await applyTriage({ tag: "alpha", cwd: repo });
+    expect(applied.feedbackIds).toEqual(["FEEDBACK-001"]);
+    expect(applied.skipped).toEqual([]);
+    expect(applied.withdrawn).toEqual([{ commentId: gone.id, conceptId: null }]);
+    expect(await readFeedback(repo, "FEEDBACK-001")).toContain("> agreed though");
+  });
+
+  it("refuses to file a comment its author changed between staging and apply", async () => {
+    const repo = await makeRepo();
+    const heavy = comment({ body: "the header feels heavy" });
+    served = [heavy];
+    await stageTriage({ tag: "alpha", cwd: repo });
+    await stageProposal(repo, "alpha", [{ commentId: heavy.id, disposition: "pending" }]);
+
+    // Edited on the review after it was staged: the staged words are stale.
+    served = [
+      { ...heavy, body: "the header is fine, actually", edited_at: "2026-07-04T11:00:00Z" },
+    ];
+    await expect(applyTriage({ tag: "alpha", cwd: repo })).rejects.toThrow(
+      /changed on the review since they were staged.*nothing was written/,
+    );
+    // Deleted on the review after it was staged: nothing on the service to file.
+    served = [];
+    await expect(applyTriage({ tag: "alpha", cwd: repo })).rejects.toThrow(heavy.id);
+
+    await expect(readFeedback(repo, "FEEDBACK-001")).rejects.toThrow();
+    expect(markFetchedCalls).toHaveLength(0);
+  });
+
+  it("applies as staged, saying so, when the review cannot be reached to check", async () => {
+    const repo = await makeRepo();
+    const heavy = comment({});
+    served = [heavy];
+    await stageTriage({ tag: "alpha", cwd: repo });
+    await stageProposal(repo, "alpha", [{ commentId: heavy.id, disposition: "pending" }]);
+    await fs.writeFile(
+      path.join(process.env.FORGE_HOME!, "config.json"),
+      JSON.stringify({ commentsApiUrl: "http://127.0.0.1:9", commentsApiKey: "sk-test" }),
+      "utf8",
+    );
+    const lines: string[] = [];
+    const applied = await applyTriage({ tag: "alpha", cwd: repo, log: (l) => lines.push(l) });
+    expect(applied.feedbackIds).toEqual(["FEEDBACK-001"]);
+    expect(lines.join("\n")).toContain("could not check the staged comments");
+  });
+
+  it("finds a question a withdrawn comment became, as well as feedback", async () => {
+    const repo = await makeRepo();
+    const ask = comment({ kind: "question", body: "will there be SSO?" });
+    served = [ask];
+    await stageTriage({ tag: "alpha", cwd: repo });
+    await stageProposal(repo, "alpha", [{ commentId: ask.id, disposition: "open" }]);
+    await applyTriage({ tag: "alpha", cwd: repo });
+
+    served = [{ ...ask, body: "", status: "withdrawn" }];
+    const staged = await stageTriage({ tag: "alpha", cwd: repo });
+    expect(staged.withdrawn).toEqual([{ commentId: ask.id, conceptId: "QUESTION-001" }]);
+  });
+});
+
+describe("the concepts triage files, byte for byte (TASK-543)", () => {
+  // Every field a staged comment can carry, so a change to the writer — a key
+  // dropped, renamed or moved — shows here as a diff. Pinned from the two
+  // writers before they became one; the only difference that made was a
+  // Question's `resolution`, which now sits after `from` as a Feedback's does.
+  it("writes a Feedback and a Question with the same provenance", async () => {
+    const repo = await makeRepo();
+    await fs.writeFile(
+      path.join(repo, "design", "decisions", "DDR-051-no-hide-pricing.md"),
+      "---\ntype: Decision\nid: DDR-051\ntitle: X\ndate: 2026-07-01\ndecision_status: accepted\ncontext_source: test\n---\n## Decision\n\nX\n",
+    );
+    const fields = {
+      scenario_id: "SCENARIO-002",
+      step_id: "s2",
+      route: "/plans",
+      selector: "#price",
+    };
+    const feedback = comment({ id: "c-feedback", body: "the header\nfeels heavy", ...fields });
+    const question = comment({
+      id: "c-question",
+      kind: "question",
+      body: "Can we skip the PIN?",
+      ...fields,
+    });
+    served = [feedback, question];
+    await stageTriage({ tag: "alpha", cwd: repo });
+    await stageProposal(repo, "alpha", [
+      { commentId: feedback.id, disposition: "accepted", taskTitle: "Lighten the header" },
+      { commentId: question.id, disposition: "declined", ddrId: "DDR-051" },
+    ]);
+
+    await applyTriage({ tag: "alpha", cwd: repo });
+
+    expect(await readFeedback(repo, "FEEDBACK-001")).toMatchInlineSnapshot(`
+      "---
+      type: Feedback
+      id: FEEDBACK-001
+      title: the header / feels heavy
+      date: 2026-07-04
+      feedback_status: accepted
+      source: review
+      freeze: FREEZE-001
+      from: PM
+      resolution: TASK-001
+      comment: c-feedback
+      scenario: SCENARIO-002
+      step: s2
+      route: /plans
+      selector: "#price"
+      ---
+      > the header / feels heavy
+      "
+    `);
+    expect(
+      await fs.readFile(path.join(repo, "design", "questions", "QUESTION-001.md"), "utf8"),
+    ).toMatchInlineSnapshot(`
+      "---
+      type: Question
+      id: QUESTION-001
+      title: Can we skip the PIN?
+      date: 2026-07-04
+      question_status: dropped
+      source: review
+      freeze: FREEZE-001
+      from: PM
+      resolution: DDR-051
+      comment: c-question
+      scenario: SCENARIO-002
+      step: s2
+      route: /plans
+      selector: "#price"
+      ---
+      > Can we skip the PIN?
+      "
+    `);
   });
 });

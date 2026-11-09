@@ -12,6 +12,7 @@ export const RESERVED_PREFIXES = [
   "FLOW",
   "FREEZE",
   "SCENARIO",
+  "CHANGE",
 ] as const;
 
 export type ReservedPrefix = (typeof RESERVED_PREFIXES)[number];

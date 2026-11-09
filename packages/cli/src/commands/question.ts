@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { CliError } from "../cli-error.js";
 import { addRecordQuestion, isQuestionStatus, QUESTION_STATUSES } from "../questions.js";
 import { openTaskLedger } from "../task-ledger.js";
 
@@ -19,11 +20,9 @@ export function registerQuestionCommand(program: Command): void {
         opts: { context?: string; date?: string; status: string; link?: string },
       ) => {
         if (!isQuestionStatus(opts.status)) {
-          console.error(
+          throw new CliError(
             `forge question: status must be one of ${QUESTION_STATUSES.join(", ")} — got "${opts.status}"`,
           );
-          process.exitCode = 1;
-          return;
         }
         const result = await addRecordQuestion(process.cwd(), {
           question,
@@ -50,11 +49,9 @@ export function registerTaskCommand(program: Command): void {
     .action(async (title: string, opts: { genesis?: string; phase?: string; notes?: string }) => {
       const ledger = await openTaskLedger(process.cwd());
       if (ledger === null) {
-        console.error(
+        throw new CliError(
           "forge task add: no task ledger found — run `forge init` (or `forge upgrade`) first.",
         );
-        process.exitCode = 1;
-        return;
       }
       const id = ledger.add({ title, genesis: opts.genesis, phase: opts.phase, notes: opts.notes });
       await ledger.save();

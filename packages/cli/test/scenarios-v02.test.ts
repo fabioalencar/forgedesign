@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseConcept } from "@forgedesign/format";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initProject } from "../src/commands/init.js";
 import { runDoctor } from "../src/doctor.js";
+import { initProject } from "../src/init.js";
 import { createDraftScenario, listSavedScenarios, saveScenario } from "../src/scenarios.js";
 
 let sandbox: string;

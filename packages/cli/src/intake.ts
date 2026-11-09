@@ -6,21 +6,16 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { localIsoDate } from "./freezes.js";
 import { openTaskLedger } from "./task-ledger.js";
 
-export const INTAKE_ARTIFACT_TYPES = [
-  "user-flows",
-  "journey-maps",
-  "service-blueprints",
-  "site-audits",
-  "personas",
-  "competitive-analysis",
-  "user-stories",
-  "data-model",
-  "process-flow",
-] as const;
-
-export type IntakeItemType = "task" | "ddr" | "artifact";
+/**
+ * What a classified item may become (TASK-305, DDR-156): a task in the ledger,
+ * or a decision staged for `forge ddr apply`. There was a third, `artifact`,
+ * which wrote `artifacts/<type>/` — a surface the format dropped and nothing
+ * reads — so a deliverable someone asked for is a task now.
+ */
+export type IntakeItemType = "task" | "ddr";
 
 export interface IntakeWarning {
   code: "short" | "timeline-gap" | "no-timestamps";
@@ -32,7 +27,6 @@ export interface IntakeProposalItem {
   title: string;
   quote: string;
   notes?: string;
-  artifactType?: (typeof INTAKE_ARTIFACT_TYPES)[number];
   acceptedTarget?: string;
 }
 
@@ -158,29 +152,16 @@ function validateItem(value: unknown, source: string): IntakeProposalItem[] {
   const title = typeof item.title === "string" ? item.title.trim() : "";
   const quote = typeof item.quote === "string" ? item.quote.trim() : "";
   const notes = typeof item.notes === "string" ? item.notes.trim() : undefined;
-  const artifactType = typeof item.artifactType === "string" ? item.artifactType : undefined;
   if (
-    (type !== "task" && type !== "ddr" && type !== "artifact") ||
+    (type !== "task" && type !== "ddr") ||
     !title ||
     title.length > 120 ||
     !quote ||
-    !source.includes(quote) ||
-    (type === "artifact" &&
-      !INTAKE_ARTIFACT_TYPES.includes(artifactType as (typeof INTAKE_ARTIFACT_TYPES)[number]))
+    !source.includes(quote)
   ) {
     return [];
   }
-  return [
-    {
-      type,
-      title,
-      quote,
-      ...(notes ? { notes } : {}),
-      ...(type === "artifact"
-        ? { artifactType: artifactType as (typeof INTAKE_ARTIFACT_TYPES)[number] }
-        : {}),
-    },
-  ];
+  return [{ type, title, quote, ...(notes ? { notes } : {}) }];
 }
 
 /**
@@ -222,8 +203,13 @@ export async function applyIntake(options: {
   const items = rawItems.flatMap((value) => {
     const valid = validateItem(value, source);
     if (valid.length === 0) {
-      const title = (value as { title?: unknown } | null)?.title;
-      log(`dropped an unverifiable item${typeof title === "string" ? `: "${title}"` : ""}`);
+      const { title, type } = (value ?? {}) as { title?: unknown; type?: unknown };
+      const named = typeof title === "string" ? `: "${title}"` : "";
+      log(
+        type === "artifact"
+          ? `dropped an artifact request${named} — intake files tasks and decisions; classify a deliverable as a task`
+          : `dropped an unverifiable item${named}`,
+      );
     }
     return valid;
   });
@@ -250,12 +236,11 @@ function renderProposal(meta: IntakeMeta, proposal: IntakeProposal): string {
           `> ${item.quote}`,
           "",
           ...(item.notes ? [item.notes, ""] : []),
-          ...(item.artifactType ? [`Target artifact type: \`${item.artifactType}\``, ""] : []),
         ]);
   return [
     `# Intake proposal — ${meta.sourceName}`,
     "",
-    "_Nothing below has been written to todo.md, decisions/, or artifacts/. Accept individual items to create a tracked record with source provenance._",
+    "_Nothing below is in the record yet. Accepting a task adds it to the task ledger; accepting a decision stages it under `.forge/ddr/` for `forge ddr apply`. Each keeps its source as provenance._",
     "",
     ...rows,
   ].join("\n");
@@ -272,7 +257,7 @@ function slug(text: string): string {
 }
 
 async function archiveSource(root: string, meta: IntakeMeta): Promise<string> {
-  const date = meta.createdAt.slice(0, 10);
+  const date = localIsoDate(new Date(meta.createdAt));
   const rel = path.join("context", date, `${meta.id}-${meta.sourceName}`);
   const target = path.join(root, rel);
   try {
@@ -284,8 +269,48 @@ async function archiveSource(root: string, meta: IntakeMeta): Promise<string> {
   return rel;
 }
 
-function nextDdrNumber(names: string[]): number {
-  return Math.max(0, ...names.map((name) => Number(/^DDR-(\d+)/.exec(name)?.[1] ?? 0))) + 1;
+/**
+ * Stages a decision for `forge ddr apply` (TASK-305, DDR-156) and returns where.
+ *
+ * This used to write `decisions/DDR-###-<slug>.md` at the repo root with a
+ * status no format has, numbered from the filenames — outside the record,
+ * invisible to doctor and to every reader. `forge ddr apply` is the one path
+ * into decisions: it allocates the id, validates the fields and writes the
+ * concept. Intake knows the title and the words that raised it, not the
+ * decision or why, so it stages those empty: `ddr apply` refuses until the
+ * forge-ddr skill or a person fills them, which is the review this needs.
+ */
+async function stageDecision(
+  root: string,
+  item: IntakeProposalItem,
+  contextSource: string,
+): Promise<string> {
+  const base = slug(item.title);
+  // `forge ddr apply` takes a slug that starts with a letter.
+  const stem = /^[a-z]/.test(base) ? base : `decision-${base}`;
+  const staged = {
+    title: item.title,
+    status: "draft",
+    contextSource,
+    decision: "",
+    why: "",
+    quote: item.quote,
+    ...(item.notes ? { notes: item.notes } : {}),
+  };
+  await fs.mkdir(path.join(root, ".forge", "ddr"), { recursive: true });
+  for (let n = 1; ; n += 1) {
+    const rel = path.join(".forge", "ddr", `${n === 1 ? stem : `${stem}-${n}`}.json`);
+    try {
+      await fs.writeFile(path.join(root, rel), `${JSON.stringify(staged, null, 2)}\n`, {
+        encoding: "utf8",
+        // Never over a decision someone else staged under the same title.
+        flag: "wx",
+      });
+      return rel;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
 }
 
 /** Promote one reviewed proposal. This is the only path from intake into Git. */
@@ -319,52 +344,11 @@ export async function acceptIntakeItem(options: {
     await ledger.save();
     target = `${ledger.relPath}#${id}`;
   } else if (item.type === "ddr") {
-    const decisions = path.join(root, "decisions");
-    const number = nextDdrNumber(await fs.readdir(decisions));
-    target = path.join(
-      "decisions",
-      `DDR-${String(number).padStart(3, "0")}-${slug(item.title)}.md`,
-    );
-    await fs.writeFile(
-      path.join(root, target),
-      [
-        `# DDR-${String(number).padStart(3, "0")} — ${item.title}`,
-        "",
-        "- **Status**: proposed",
-        `- **Date**: ${new Date().toISOString().slice(0, 10)}`,
-        `- **Context source**: [${meta.sourceName}](../${source})`,
-        "",
-        "## Proposed decision",
-        "",
-        "_Complete this stub during review; intake does not infer rationale or alternatives._",
-        "",
-        "## Source quote",
-        "",
-        `> ${item.quote}`,
-        "",
-        ...(item.notes ? ["## Notes", "", item.notes, ""] : []),
-      ].join("\n"),
-      "utf8",
-    );
+    target = await stageDecision(root, item, source);
   } else {
-    const type = item.artifactType!;
-    target = path.join("artifacts", type, `${slug(item.title)}.md`);
-    await fs.mkdir(path.dirname(path.join(root, target)), { recursive: true });
-    await fs.writeFile(
-      path.join(root, target),
-      [
-        `# ${item.title}`,
-        "",
-        "- **Status**: requested",
-        `- **Context source**: [${meta.sourceName}](../../${source})`,
-        "",
-        "## Source quote",
-        "",
-        `> ${item.quote}`,
-        "",
-        ...(item.notes ? ["## Notes", "", item.notes, ""] : []),
-      ].join("\n"),
-      "utf8",
+    // A proposal applied before TASK-305 can still hold an `artifact` item.
+    throw new Error(
+      `item ${options.index} is an artifact request, which intake no longer files — the record has no artifacts/; make it a task`,
     );
   }
   item.acceptedTarget = target;

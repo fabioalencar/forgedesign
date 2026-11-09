@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { createWriteStream, promises as fs } from "node:fs";
 import net from "node:net";
 import path from "node:path";
+import { writeFileAtomic } from "./atomic-write.js";
 import { checkedOutBranch, git, requireRepoRoot } from "./git.js";
 import { readProjectFile } from "./project.js";
 
@@ -103,6 +104,21 @@ export function previewSlug(branch: string): string {
   );
 }
 
+/**
+ * A name `stopPreview` accepts: one `previewSlug` would have made (TASK-526).
+ *
+ * The name is joined into the paths it reads, deletes and removes as a
+ * worktree, and it arrives from a command-line argument and from the
+ * dashboard's stop button, so `../../forge` deleted the project's forge.json.
+ * A slug is one path segment by construction; an all-dots one is the only
+ * slug that still means a directory, and no branch git accepts produces it.
+ */
+function assertPreviewName(name: string): void {
+  if (name !== previewSlug(name) || /^\.+$/.test(name)) {
+    throw new Error(`"${name}" is not a preview name — \`forge preview status\` lists them`);
+  }
+}
+
 function previewDir(root: string): string {
   return path.join(root, ".forge", "preview");
 }
@@ -140,7 +156,12 @@ async function portListening(port: number, timeoutMs = 500): Promise<boolean> {
 
 async function readMeta(root: string, name: string): Promise<PreviewRecord | null> {
   try {
-    return JSON.parse(await fs.readFile(metaPath(root, name), "utf8")) as PreviewRecord;
+    const meta = JSON.parse(await fs.readFile(metaPath(root, name), "utf8")) as PreviewRecord;
+    // The pid becomes `kill(-pid)`, which signals a whole process group, and
+    // `kill(-1)` signals every process this user owns. A record whose pid is not
+    // one `spawn` could have handed back is not a record this module wrote
+    // (TASK-526).
+    return Number.isInteger(meta?.pid) && meta.pid > 1 ? meta : null;
   } catch {
     return null;
   }
@@ -354,7 +375,7 @@ export async function startPreview(options: StartPreviewOptions = {}): Promise<P
     ...(bridge ? { bridge } : {}),
     ...(bridge ? { bridgeAdapter: options.bridgeAdapter } : {}),
   };
-  await fs.writeFile(metaPath(root, name), `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  await writeFileAtomic(metaPath(root, name), `${JSON.stringify(record, null, 2)}\n`);
   child.unref();
   log(`Preview ready at ${record.url} (pid ${record.pid}).`);
   return record;
@@ -383,6 +404,7 @@ export interface StopPreviewOptions {
 
 export async function stopPreview(options: StopPreviewOptions): Promise<{ stopped: boolean }> {
   const log = options.log ?? (() => {});
+  assertPreviewName(options.name);
   const root = await requireRepoRoot(options.cwd);
 
   const meta = await readMeta(root, options.name);

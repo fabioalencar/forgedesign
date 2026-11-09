@@ -4,7 +4,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runFreeze } from "../src/commands/freeze.js";
+import { runFreeze } from "../src/freeze-ceremony.js";
 import { readFreezes } from "../src/freezes.js";
 import { installFakeVercel, makeDesignRepo } from "./helpers.js";
 

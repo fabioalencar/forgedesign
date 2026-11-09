@@ -53,6 +53,11 @@ the user rather than skipping it or writing one reflexively.
    - `consequences` (optional) — what this makes easier, what it makes harder, what it
      commits the project to.
 
+   **A decision intake staged** (TASK-305) is already at `.forge/ddr/<slug>.json`, with the
+   title, the `quote` that raised it, `contextSource`, and an empty `decision` and
+   `why`. Fill those two (and the optional fields) from the conversation in place —
+   `forge ddr apply` refuses it until they are there — then apply it as below.
+
 3. **Stage it.** Write the draft as JSON to `.forge/ddr/<slug>.json` in the record root:
    ```json
    {

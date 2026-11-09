@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import type { Command } from "commander";
+import { CliError, errorMessage } from "../cli-error.js";
 import { SKILL_FILES } from "../generated/skills.js";
 import { repoRoot } from "../git.js";
 import { forgeHome } from "../registry.js";
@@ -24,17 +25,13 @@ export function registerSkillsCommand(program: Command): void {
     .description("copy the skills into .claude/skills/ so an agent session can run them")
     .action(async (options: { agents?: boolean; home?: boolean; source?: string }) => {
       if (options.source && !options.home) {
-        console.error("forge skills install: --source only applies with --home");
-        process.exitCode = 1;
-        return;
+        throw new CliError("forge skills install: --source only applies with --home");
       }
       if (options.home) {
         if (options.agents) {
-          console.error(
+          throw new CliError(
             "forge skills install: --agents writes a project's AGENTS.md — run it without --home",
           );
-          process.exitCode = 1;
-          return;
         }
         await installHome(options.source);
         return;
@@ -89,9 +86,9 @@ export function registerSkillsCommand(program: Command): void {
         const available = Object.keys(skillFiles())
           .map((relPath) => relPath.replace("/SKILL.md", ""))
           .join(", ");
-        console.error(`forge skills show: no skill "${name}" — available: ${available}, agents`);
-        process.exitCode = 1;
-        return;
+        throw new CliError(
+          `forge skills show: no skill "${name}" — available: ${available}, agents`,
+        );
       }
       console.log(body);
     });
@@ -102,9 +99,7 @@ async function installHome(source: string | undefined): Promise<void> {
   try {
     result = await installHomeSkills({ home: homedir(), forgeHome: forgeHome(), source });
   } catch (error) {
-    console.error(`forge skills install: ${(error as Error).message}`);
-    process.exitCode = 1;
-    return;
+    throw new CliError(`forge skills install: ${errorMessage(error)}`);
   }
 
   if (result.store) console.log(`Skills written to ${result.store}.`);

@@ -4,7 +4,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { archiveTag } from "../src/commands/comments.js";
+import { archiveTag } from "../src/comments.js";
 
 // `archiveTag` is version-agnostic — it archives a freeze's snapshot through the
 // comment API and never touches the ledger — so this needs only a git repo with

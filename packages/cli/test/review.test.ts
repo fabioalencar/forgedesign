@@ -2,8 +2,8 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initProject } from "../src/commands/init.js";
 import { runDoctor } from "../src/doctor.js";
+import { initProject } from "../src/init.js";
 import { applyReview, reviewStagePath } from "../src/review.js";
 
 // `forge review apply` — the write side of the `forge-review` skill (DDR-108,

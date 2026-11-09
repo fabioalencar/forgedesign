@@ -1,4 +1,3 @@
-import { CLI_VERSION } from "./version.js";
 // Generating the feature log at freeze time (T-238, spec/format.md §5).
 //
 // "What closed since the previous freeze" has no field to read: a task carries
@@ -30,8 +29,9 @@ import {
 } from "@forgedesign/format";
 import { bundleRootOf, writeBundleIndex } from "./bundle-index.js";
 import type { FreezeRecord } from "./freezes.js";
-import { git } from "./git.js";
+import { END_OF_OPTIONS, git } from "./git.js";
 import { compareScreens, normalizeRoute, type ScreenComparison } from "./routes.js";
+import { CLI_VERSION } from "./version.js";
 
 export interface ClosedTask {
   id: string;
@@ -105,10 +105,10 @@ function doneTasks(ledgerText: string, isConcept: boolean): ClosedTask[] {
  * `forge upgrade` had its ledger somewhere else in older tags — and the
  * `TASK-###` ids survive that migration, so the comparison still holds.
  */
-async function ledgerAt(root: string, ref: string): Promise<ClosedTask[] | null> {
+export async function ledgerAt(root: string, ref: string): Promise<ClosedTask[] | null> {
   for (const relPath of LEDGER_PATHS) {
     try {
-      const text = await git(root, ["show", `${ref}:${relPath}`]);
+      const text = await git(root, ["show", END_OF_OPTIONS, `${ref}:${relPath}`]);
       return doneTasks(text, relPath.startsWith("design"));
     } catch {
       // not at this path in that revision — try the next convention
@@ -133,7 +133,11 @@ async function pagesAt(
 ): Promise<Record<string, PageIntent>> {
   let text: string;
   try {
-    text = await git(root, ["show", `${ref}:${path.posix.join(recordRoot, "pages.md")}`]);
+    text = await git(root, [
+      "show",
+      END_OF_OPTIONS,
+      `${ref}:${path.posix.join(recordRoot, "pages.md")}`,
+    ]);
   } catch {
     return {};
   }
@@ -157,7 +161,7 @@ export async function decisionAt(
   relPath: string,
 ): Promise<{ id: string; title: string; accepted: boolean } | null> {
   try {
-    const text = await git(root, ["show", `${ref}:${relPath}`]);
+    const text = await git(root, ["show", END_OF_OPTIONS, `${ref}:${relPath}`]);
     const concept = parseConcept(path.basename(relPath), text);
     if (!concept.id || concept.id === "DDR-000") return null;
     return {
@@ -186,8 +190,8 @@ async function decisionsAcceptedBetween(
   let listing: string;
   try {
     listing = previousTag
-      ? await git(root, ["diff", "--name-only", previousTag, tag, "--", ...dirs])
-      : await git(root, ["ls-tree", "-r", "--name-only", tag, "--", ...dirs]);
+      ? await git(root, ["diff", "--name-only", END_OF_OPTIONS, previousTag, tag, "--", ...dirs])
+      : await git(root, ["ls-tree", "-r", "--name-only", END_OF_OPTIONS, tag, "--", ...dirs]);
   } catch {
     return [];
   }

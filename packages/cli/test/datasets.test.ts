@@ -325,3 +325,45 @@ describe("dataset reference resolution (reuse across scenarios)", () => {
     expect(await resolveDatasetReference("ds-00000000@1", root)).toBeNull();
   });
 });
+
+describe("entity names stay inside the dataset (TASK-527)", () => {
+  it("does not read a JSON file outside the dataset that a committed manifest names", async () => {
+    const root = await repo();
+    const created = await createDataset({
+      cwd: root,
+      title: "Users",
+      entities: [usersEntity],
+      seed: 1,
+    });
+    // Something on the machine a scenario bundle must never carry.
+    await fs.writeFile(path.join(sandbox, "secret.json"), '["token"]\n', "utf8");
+    const manifest = path.join(root, created.dir, "dataset.md");
+    const text = await fs.readFile(manifest, "utf8");
+    await fs.writeFile(
+      manifest,
+      text.replace("entities: [users]", "entities: [users, ../../../../secret]"),
+      "utf8",
+    );
+
+    await expect(listDatasets(root)).rejects.toThrow(/is not an entity name/);
+    await expect(resolveDatasetReference(`${created.manifest.id}@1`, root)).rejects.toThrow(
+      /is not an entity name/,
+    );
+  });
+
+  it("writes nothing when an entity name would leave the dataset", async () => {
+    const root = await repo();
+    // The dashboard's create form passes these names through from the browser.
+    await expect(
+      createDataset({
+        cwd: root,
+        title: "Escape",
+        entities: [{ ...usersEntity, name: "../../../escaped" }],
+        seed: 1,
+      }),
+    ).rejects.toThrow(/is not an entity name/);
+
+    await expect(fs.access(path.join(sandbox, "escaped.json"))).rejects.toThrow();
+    await expect(fs.access(path.join(root, "datasets", "escape"))).rejects.toThrow();
+  });
+});

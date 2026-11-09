@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classify, isSkipped, scanForAdoption } from "../src/adopt.js";
-import { initProject } from "../src/commands/init.js";
+import { initProject } from "../src/init.js";
 
 let sandbox: string;
 let repo: string;

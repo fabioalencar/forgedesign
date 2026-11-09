@@ -52,10 +52,15 @@ export async function runDoctor(root: string, options: DoctorOptions = {}): Prom
     (version.kind === "migratable" && version.version === null)
   );
   const file = hasManifest ? "forge.json" : undefined;
+  // A recordRoot outside the repo is a manifest that is wrong, not a missing
+  // one: exit 1, and its own rule, since its fix is not an upgrade (TASK-528).
+  const rule = unreadable
+    ? "unparseable"
+    : version.kind === "outside"
+      ? "record-root"
+      : "format-version";
   return {
-    findings: [
-      finding(unreadable ? "unparseable" : "format-version", versionRefusal(version), file),
-    ],
+    findings: [finding(rule, versionRefusal(version), file)],
     exitCode: unreadable ? 2 : 1,
   };
 }

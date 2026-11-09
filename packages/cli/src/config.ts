@@ -1,5 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { writeFileAtomic } from "./atomic-write.js";
+import { isJsonObject, readJsonFile } from "./json-file.js";
 import { forgeHome } from "./registry.js";
 
 /** Per-user settings in ~/.forge/config.json (FORGE_HOME-overridable). */
@@ -21,17 +23,8 @@ export function configPath(): string {
 }
 
 export async function readUserConfig(): Promise<UserConfig> {
-  try {
-    return JSON.parse(await fs.readFile(configPath(), "utf8")) as UserConfig;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    // A hand-edited config with a typo would otherwise crash every command that
-    // touches Cloud with a bare parser message naming no file.
-    if (error instanceof SyntaxError) {
-      throw new Error(`${configPath()} is not valid JSON — fix or delete it (${error.message})`);
-    }
-    throw error;
-  }
+  const parsed = await readJsonFile(configPath());
+  return isJsonObject(parsed) ? (parsed as UserConfig) : {};
 }
 
 /**
@@ -45,9 +38,8 @@ export async function writeUserConfig(changes: Partial<UserConfig>): Promise<Use
     if (merged[key] === undefined) delete merged[key];
   }
   await fs.mkdir(path.dirname(configPath()), { recursive: true });
-  await fs.writeFile(configPath(), `${JSON.stringify(merged, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
+  // Exactly 0600 every time, not only when the file is new: a config written
+  // 0644 by anything else kept 0644, token included (TASK-535).
+  await writeFileAtomic(configPath(), `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
   return merged;
 }

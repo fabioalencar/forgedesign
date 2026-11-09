@@ -2,9 +2,9 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initProject } from "../src/commands/init.js";
-import { collectStatus, formatStatus } from "../src/commands/status.js";
+import { initProject } from "../src/init.js";
 import { registerProject } from "../src/registry.js";
+import { collectStatus, formatStatus } from "../src/status.js";
 
 let sandbox: string;
 let previousForgeHome: string | undefined;

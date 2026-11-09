@@ -6,14 +6,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
-  BUNDLE_DIR,
   buildBundleIndex,
   INDEX_FILENAME,
   isGeneratedIndex,
-  parseForgeJson,
   scanBundle,
-  V02_FORMAT_VERSION,
 } from "@forgedesign/format";
+import { readRecordVersion } from "./record-version.js";
 
 export interface IndexResult {
   /** repo-relative path written, or null when this record has no bundle */
@@ -22,16 +20,16 @@ export interface IndexResult {
   conceptCount: number;
 }
 
-/** The bundle directory for a v0.2 record, or null when this isn't one. */
+/**
+ * The bundle directory for a v0.2 record, or null when this isn't one — which
+ * includes a manifest whose `recordRoot` leaves the repo, so no writer that
+ * starts here can follow it out (TASK-528). It reads the manifest the way
+ * `readRecordVersion` does because it is that reader; this used to be a second
+ * copy of it.
+ */
 export async function bundleRootOf(root: string): Promise<string | null> {
-  let manifest: { formatVersion?: unknown; recordRoot?: unknown };
-  try {
-    manifest = parseForgeJson(await fs.readFile(path.join(root, "forge.json"), "utf8"));
-  } catch {
-    return null;
-  }
-  if (manifest.formatVersion !== V02_FORMAT_VERSION) return null;
-  return typeof manifest.recordRoot === "string" ? manifest.recordRoot : BUNDLE_DIR;
+  const version = await readRecordVersion(root);
+  return version.kind === "current" ? version.recordRoot : null;
 }
 
 /**

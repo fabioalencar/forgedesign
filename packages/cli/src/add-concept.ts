@@ -37,6 +37,7 @@ import {
   TYPE_DIRECTORIES,
   withFrontmatter,
 } from "@forgedesign/format";
+import { writeNewFile } from "./atomic-write.js";
 import { writeBundleIndex } from "./bundle-index.js";
 import { todayIsoDate } from "./freezes.js";
 import { requireCurrentRecord } from "./record-version.js";
@@ -96,6 +97,11 @@ export const CONCEPT_CATALOGUE: Record<ConceptType, ConceptEntry> = {
     keys: ["feedback"],
     purpose: "One piece of feedback, with its disposition",
     writtenBy: "forge comments triage apply",
+  },
+  Change: {
+    keys: ["change", "changes", "changelog", "roadmap"],
+    purpose: "One change a stakeholder is told about: done, exploring or coming",
+    writtenBy: "forge changelog apply (after `forge changelog draft`)",
   },
 
   // The on-demand set, which is what this command is for.
@@ -325,7 +331,9 @@ export async function addConcept(
   );
 
   await fs.mkdir(path.dirname(absolute), { recursive: true });
-  await fs.writeFile(absolute, contents, "utf8");
+  // The check above names the common case; this closes the gap between it and
+  // the write, where another writer can take the same id (TASK-537).
+  await writeNewFile(absolute, contents);
   // The writer that adds a concept is the one that keeps the index true (T-300).
   await writeBundleIndex(root);
 
