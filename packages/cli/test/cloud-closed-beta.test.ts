@@ -4,8 +4,8 @@ import { CLOUD_HELP_GROUP } from "../src/cloud-auth.js";
 import { registerCommentsCommand } from "../src/commands/comments.js";
 import { registerCloudAuthCommands } from "../src/commands/login.js";
 import { registerPublishCommand } from "../src/commands/publish.js";
-import { formatStatus, type ProjectStatus } from "../src/commands/status.js";
 import { commentsApiFor } from "../src/comments-client.js";
+import { formatStatus, type ProjectStatus } from "../src/status.js";
 
 // Forge Cloud is not open for sign-up (DDR-137). The open-source CLI works in
 // full without it, and nothing it prints may send someone to sign up for it.

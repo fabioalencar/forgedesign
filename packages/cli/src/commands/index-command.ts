@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { writeBundleIndex } from "../bundle-index.js";
+import { CliError } from "../cli-error.js";
 import { readRecordVersion, versionRefusal } from "../record-version.js";
 
 export function registerIndexCommand(program: Command): void {
@@ -16,9 +17,7 @@ export function registerIndexCommand(program: Command): void {
       // give, from the same shared source (DDR-095's sharp edge).
       const version = await readRecordVersion(root);
       if (version.kind !== "current") {
-        console.error(`forge index: ${versionRefusal(version)}`);
-        process.exitCode = 1;
-        return;
+        throw new CliError(`forge index: ${versionRefusal(version)}`);
       }
 
       const result = await writeBundleIndex(root);

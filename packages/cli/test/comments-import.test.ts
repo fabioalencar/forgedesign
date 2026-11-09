@@ -3,8 +3,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyTriage } from "../src/commands/comments.js";
-import { initProject } from "../src/commands/init.js";
+import { applyTriage } from "../src/comments.js";
 import {
   figmaComments,
   figmaFileKey,
@@ -13,6 +12,8 @@ import {
   readImportedBatch,
   stageImport,
 } from "../src/comments-import.js";
+import { todayIsoDate } from "../src/freezes.js";
+import { initProject } from "../src/init.js";
 
 let sandbox: string;
 let previousForgeHome: string | undefined;
@@ -187,7 +188,7 @@ describe("stageImport", () => {
     await fs.writeFile(file, JSON.stringify(FIGMA_EXPORT), "utf8");
 
     const result = await stageImport({ root: repo, source: "figma", input: file, freeze: "alpha" });
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIsoDate();
     expect(result).toMatchObject({
       batch: `figma-${today}`,
       count: 2,

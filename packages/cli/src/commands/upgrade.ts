@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { CliError } from "../cli-error.js";
 import { readRecordVersion } from "../record-version.js";
 import { upgradeRecord, upgradeRecordToV02 } from "../upgrade.js";
 
@@ -22,11 +23,9 @@ export function registerUpgradeCommand(program: Command): void {
         return;
       }
       if (options.to !== "0.1") {
-        console.error(
+        throw new CliError(
           `forge upgrade: unknown target version "${options.to}" (expected 0.1 or 0.2)`,
         );
-        process.exitCode = 1;
-        return;
       }
 
       const result = await upgradeRecord(root, { prune: options.prune });

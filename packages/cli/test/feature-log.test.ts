@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseConcept } from "@forgedesign/format";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initProject } from "../src/commands/init.js";
 import { generateFeatureLog } from "../src/feature-log.js";
 import type { FreezeRecord } from "../src/freezes.js";
+import { initProject } from "../src/init.js";
 import { CLI_VERSION } from "../src/version.js";
 
 let sandbox: string;
@@ -308,6 +308,27 @@ describe("which screens changed (TASK-461)", () => {
     expect(byTag).toEqual({ alpha: [], beta: ["DDR-001"], gamma: ["DDR-002"] });
     const text = await fs.readFile(path.join(root, "design", "feature-log.md"), "utf8");
     expect(text).toContain("### Decisions accepted\n\n- DDR-002 DDR-002 says so");
+  });
+});
+
+describe("a tag read from freezes.json is never a git option (TASK-524)", () => {
+  it("does not let a tag of --output=<path> write a file", async () => {
+    await freezeWith("alpha", []);
+    await freezeWith("beta", []);
+    // freezes.json is tracked, so this is a line anyone with push access can
+    // commit. Unguarded, it made `git diff` write its listing to that path.
+    const outside = path.join(sandbox, "written-by-git.txt");
+
+    const result = await generateFeatureLog(root, [
+      freeze(`--output=${outside}`, "2026-07-01"),
+      freeze("beta", "2026-07-15"),
+    ]);
+
+    await expect(fs.access(outside)).rejects.toThrow();
+    // Git refuses it as a revision instead, and the log says it has no ledger there.
+    expect(result.warnings).toContain(
+      `feature log: no task ledger at --output=${outside} — its section is empty`,
+    );
   });
 });
 

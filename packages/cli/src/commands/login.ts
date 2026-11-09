@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { CliError, errorMessage } from "../cli-error.js";
 import {
   awaitApproval,
   CLOUD_HELP_GROUP,
@@ -30,9 +31,7 @@ export function registerCloudAuthCommands(program: Command): void {
       try {
         grant = await requestDeviceCode(base);
       } catch (error) {
-        console.error(`forge login: ${(error as Error).message}`);
-        process.exitCode = 1;
-        return;
+        throw new CliError(`forge login: ${errorMessage(error)}`);
       }
 
       console.log("\nForge Cloud is in closed beta: sign-in works for invited accounts only.");
@@ -56,18 +55,15 @@ export function registerCloudAuthCommands(program: Command): void {
           return;
         }
         case "denied":
-          console.error(
+          throw new CliError(
             "\nforge login: the request was denied in the browser. Nothing was stored.",
           );
-          process.exitCode = 1;
-          return;
         case "expired":
-          console.error("\nforge login: that code expired before it was approved. Try again.");
-          process.exitCode = 1;
-          return;
+          throw new CliError("\nforge login: that code expired before it was approved. Try again.");
         default:
-          console.error("\nforge login: Forge Cloud did not recognise this sign-in. Try again.");
-          process.exitCode = 1;
+          throw new CliError(
+            "\nforge login: Forge Cloud did not recognise this sign-in. Try again.",
+          );
       }
     });
 

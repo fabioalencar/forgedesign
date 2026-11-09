@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Command } from "commander";
+import { CliError } from "../cli-error.js";
 
 /**
  * `forge dash` starts the local dashboard (spec §4). v1 resolves the
@@ -29,12 +30,10 @@ export function registerDashCommand(program: Command): void {
     .action(() => {
       const dir = resolveDashboardDir();
       if (!dir) {
-        console.error(
+        throw new CliError(
           "forge dash: the local dashboard runs from a Forge source checkout and is not part of the\n" +
             "  npm package. Set FORGE_DASHBOARD_DIR to the dashboard package in a checkout.",
         );
-        process.exitCode = 1;
-        return;
       }
       console.log(`Starting dashboard from ${dir} …`);
       const child = spawn("pnpm", ["dev"], { cwd: dir, stdio: "inherit" });

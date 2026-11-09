@@ -7,6 +7,7 @@ import {
   scanForAdoption,
   TRUTH_NOTE,
 } from "../adopt.js";
+import { CliError, errorMessage } from "../cli-error.js";
 
 export function registerAdoptCommand(program: Command): void {
   program
@@ -18,18 +19,16 @@ export function registerAdoptCommand(program: Command): void {
     .action(async (options: { limit: string }) => {
       const limit = Number.parseInt(options.limit, 10);
       if (!Number.isFinite(limit) || limit < 1) {
-        console.error(`forge adopt: --limit must be a positive number — got "${options.limit}"`);
-        process.exitCode = 1;
-        return;
+        throw new CliError(
+          `forge adopt: --limit must be a positive number — got "${options.limit}"`,
+        );
       }
 
       let report: Awaited<ReturnType<typeof scanForAdoption>>;
       try {
         report = await scanForAdoption(process.cwd(), limit);
       } catch (error) {
-        console.error(`forge adopt: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
-        return;
+        throw new CliError(`forge adopt: ${errorMessage(error)}`);
       }
 
       if (report.candidates.length === 0) {

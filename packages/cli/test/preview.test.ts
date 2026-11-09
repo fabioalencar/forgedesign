@@ -228,6 +228,34 @@ describe("preview runner", () => {
     await expect(fs.access(metaPath)).resolves.toBeUndefined();
   });
 
+  it("refuses a stop name that is not a preview slug, before it touches a path (TASK-526)", async () => {
+    // The dashboard's stop button passes this through from the browser.
+    const manifest = path.join(repo, "forge.json");
+    await fs.writeFile(manifest, "{}\n", "utf8");
+
+    for (const name of ["../../forge", "..", "", "Main", "a/b"]) {
+      await expect(stopPreview({ name, cwd: repo })).rejects.toThrow(/is not a preview name/);
+    }
+    await expect(fs.access(manifest)).resolves.toBeUndefined();
+    await expect(stopPreview({ name: "main", cwd: repo })).resolves.toEqual({ stopped: false });
+  });
+
+  it("ignores a record whose pid no spawn could have returned (TASK-526)", async () => {
+    // kill(-1) would signal every process this user owns, so this test only
+    // ever lists: a listing reads the record without signalling anything.
+    const dir = path.join(repo, ".forge", "preview");
+    await fs.mkdir(dir, { recursive: true });
+    for (const [name, pid] of [
+      ["one", 1],
+      ["zero", 0],
+      ["text", "123"],
+    ] as const) {
+      await fs.writeFile(path.join(dir, `${name}.json`), JSON.stringify({ name, pid, port: 1 }));
+    }
+
+    expect(await listPreviews(repo)).toEqual([]);
+  });
+
   it("refuses a detached HEAD, and reports a command that dies before ready", async () => {
     // There is no branch to name the preview after, so there is nothing to preview.
     const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo }).toString().trim();

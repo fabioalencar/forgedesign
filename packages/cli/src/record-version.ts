@@ -18,10 +18,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import {
-  BUNDLE_DIR,
   type ForgeManifest,
   isSupportedFormatVersion,
   parseForgeJson,
+  recordRootOf,
   V01_FORMAT_VERSION,
   V02_FORMAT_VERSION,
 } from "@forgedesign/format";
@@ -38,6 +38,8 @@ export type RecordVersion =
   | { kind: "absent" }
   /** forge.json is there and is not JSON. */
   | { kind: "unparseable" }
+  /** A current manifest whose `recordRoot` leaves the repository (TASK-528). */
+  | { kind: "outside"; recordRoot: string }
   /** A formatVersion this build has never heard of, which upgrade cannot help with. */
   | { kind: "unknown"; version: string };
 
@@ -73,11 +75,9 @@ export async function readRecordVersion(root: string): Promise<RecordVersion> {
 
   const version = typeof manifest.formatVersion === "string" ? manifest.formatVersion : undefined;
   if (version === V02_FORMAT_VERSION) {
-    return {
-      kind: "current",
-      recordRoot: typeof manifest.recordRoot === "string" ? manifest.recordRoot : BUNDLE_DIR,
-      manifest,
-    };
+    const recordRoot = recordRootOf(manifest);
+    if (recordRoot === null) return { kind: "outside", recordRoot: String(manifest.recordRoot) };
+    return { kind: "current", recordRoot, manifest };
   }
   if (isSupportedFormatVersion(version)) return { kind: "migratable", version: version ?? null };
   return { kind: "unknown", version: version ?? "(missing)" };
@@ -101,6 +101,8 @@ export function versionRefusal(version: Exclude<RecordVersion, { kind: "current"
       return "forge.json not found — not a Forge record (run `forge init`)";
     case "unparseable":
       return "forge.json is not valid JSON";
+    case "outside":
+      return `forge.json#recordRoot "${version.recordRoot}" is outside the repository — it names the record's directory relative to the repo root, e.g. "design"`;
     case "unknown":
       return `forge.json#formatVersion "${version.version}" is not a format this build understands — it serves ${V02_FORMAT_VERSION} and migrates ${V01_FORMAT_VERSION}, so this record may need a newer Forge`;
   }

@@ -16,6 +16,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { nextId, scanBundle, withFrontmatter } from "@forgedesign/format";
+import { writeNewFile } from "./atomic-write.js";
 import { writeBundleIndex } from "./bundle-index.js";
 import { todayIsoDate } from "./freezes.js";
 import { requireCurrentRecord } from "./record-version.js";
@@ -75,7 +76,7 @@ export async function addRecordQuestion(
   const id = nextId(allocated, "QUESTION");
   const relPath = path.join(recordRoot, "questions", `${id}.md`);
   await fs.mkdir(path.join(root, recordRoot, "questions"), { recursive: true });
-  await fs.writeFile(
+  await writeNewFile(
     path.join(root, relPath),
     withFrontmatter(
       {
@@ -89,7 +90,6 @@ export async function addRecordQuestion(
       },
       "",
     ),
-    "utf8",
   );
   // The index is derived from the concept listing, so the writer that adds a
   // concept keeps it true (T-300).

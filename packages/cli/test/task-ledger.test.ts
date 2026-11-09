@@ -61,3 +61,44 @@ describe("openTaskLedger", () => {
     expect(await readTaskCounts(root)).toBeNull();
   });
 });
+
+describe("saving adds to the ledger as it is now (TASK-536)", () => {
+  const ids = async () =>
+    allEntries(
+      parseTodos(
+        parseConcept("todos.md", await fs.readFile(path.join(root, "design/todos.md"), "utf8"))
+          .body,
+      ),
+    ).map((entry) => entry.id);
+
+  beforeEach(async () => {
+    await write("forge.json", JSON.stringify({ formatVersion: "0.2", recordRoot: "design" }));
+    await write("design/todos.md", V02_LEDGER);
+  });
+
+  it("keeps a task someone else added after this command read the ledger", async () => {
+    const ledger = await openTaskLedger(root);
+    ledger?.add({ title: "Mine" }); // TASK-002, from the copy it read
+    // Meanwhile the dashboard's board, or another command, files TASK-003.
+    const text = await fs.readFile(path.join(root, "design/todos.md"), "utf8");
+    await write(
+      "design/todos.md",
+      text.replace("## Doing", "- [ ] TASK-003 Theirs\n  status: todo\n\n## Doing"),
+    );
+
+    await ledger?.save();
+
+    expect(await ids()).toEqual(["TASK-001", "TASK-003", "TASK-002"]);
+  });
+
+  it("refuses, and writes nothing, when the id it allocated was taken meanwhile", async () => {
+    const ledger = await openTaskLedger(root);
+    ledger?.add({ title: "Mine" }); // TASK-002
+    const text = await fs.readFile(path.join(root, "design/todos.md"), "utf8");
+    const theirs = text.replace("## Doing", "- [ ] TASK-002 Theirs\n  status: todo\n\n## Doing");
+    await write("design/todos.md", theirs);
+
+    await expect(ledger?.save()).rejects.toThrow(/gained TASK-002 while this ran/);
+    expect(await fs.readFile(path.join(root, "design/todos.md"), "utf8")).toBe(theirs);
+  });
+});

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { coreScaffold, parseConcept, parseTodos, TASK_SECTIONS } from "@forgedesign/format";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initProject } from "../src/commands/init.js";
 import { runDoctor } from "../src/doctor.js";
+import { initProject } from "../src/init.js";
 import { readRegistry } from "../src/registry.js";
 
 let sandbox: string;

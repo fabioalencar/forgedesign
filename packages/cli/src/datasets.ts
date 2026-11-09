@@ -61,7 +61,28 @@ function manifestPath(repoRoot: string, slug: string): string {
   return path.join(datasetDir(repoRoot, slug), "dataset.md");
 }
 
+/**
+ * An entity name is a filename here, and a word in `<entity>.<field>`
+ * relationships, so letters, digits, `_` and `-` (TASK-527).
+ *
+ * Names arrive from a tracked `dataset.md` (`entities:`) and from the
+ * dashboard's create form, and each becomes `records/<entity>.json`. Unchecked,
+ * `../../../x` read any JSON file on the machine into the dataset — and from
+ * there into the scenario bundle a freeze builds and a publish hosts — and
+ * wrote generated rows over one.
+ */
+const ENTITY_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+
+function assertEntityName(entity: string): void {
+  if (!ENTITY_NAME_RE.test(entity)) {
+    throw new Error(
+      `"${entity}" is not an entity name — letters, digits, "_" and "-", not starting with "-"`,
+    );
+  }
+}
+
 function recordsPath(repoRoot: string, slug: string, entity: string): string {
+  assertEntityName(entity);
   return path.join(datasetDir(repoRoot, slug), "records", `${entity}.json`);
 }
 
@@ -395,6 +416,8 @@ async function writeDatasetFiles(
   records: Record<string, unknown[]>,
   description = "",
 ): Promise<void> {
+  // Every name before any write, so a bad one leaves no half-written dataset.
+  for (const entity of Object.keys(records)) assertEntityName(entity);
   const dir = datasetDir(root, slug);
   await fs.mkdir(path.join(dir, "records"), { recursive: true });
   await fs.writeFile(manifestPath(root, slug), serializeManifest(manifest, description), "utf8");

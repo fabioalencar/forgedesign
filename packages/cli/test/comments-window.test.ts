@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseWindowDeadline } from "../src/commands/comments.js";
+import { parseWindowDeadline } from "../src/comments.js";
 
 // The feedback window's date parsing (TASK-387).
 //

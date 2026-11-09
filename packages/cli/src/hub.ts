@@ -117,18 +117,49 @@ function escapeHtml(value: string): string {
   });
 }
 
+const LINK_SCHEMES = new Set(["http", "https", "mailto"]);
+
+/**
+ * Whether a link target may become an `href` (TASK-525): a web page, a mail
+ * address, or a path relative to the hub — never `javascript:`, `data:` or any
+ * other scheme a click runs rather than follows.
+ *
+ * Escaping keeps a target inside its attribute; it does nothing about what the
+ * attribute says. And what the page renders is not only the creator's own
+ * writing: a stakeholder's question becomes a Question's title at triage, a
+ * Question is visible to stakeholders by default, and the timeline renders
+ * titles as Markdown. An allowlist, because a browser strips control
+ * characters before reading a scheme, so a denylist of bad ones can be walked
+ * around.
+ *
+ * A browser also trims leading and trailing spaces before it reads a scheme,
+ * so ` javascript:alert(1)` would pass a check that reads the raw value as a
+ * relative link and then run (TASK-555). A target with surrounding whitespace
+ * is refused outright rather than trimmed into something else: preview and
+ * Storybook addresses come from `freezes.json`, which a cloned repository
+ * supplies.
+ */
+function isSafeHref(href: string): boolean {
+  if (href !== href.trim() || /\p{Cc}/u.test(href)) return false;
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(href)?.[1];
+  return scheme === undefined || LINK_SCHEMES.has(scheme.toLowerCase());
+}
+
 /**
  * Inline CommonMark the record actually uses — code spans, emphasis, links —
  * over already-escaped text. The record is plain CommonMark (spec §1 principle
  * 5), and printing `**like this**` on a page is the defect the dashboard
- * already fixed once (TASK-392); a static page owes its reader the same.
+ * already fixed once (TASK-392); a static page owes its reader the same. A link
+ * whose target is refused keeps its text and loses the link.
  */
 function renderInline(text: string): string {
   return escapeHtml(text)
     .replace(/`([^`\n]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, "$1<em>$2</em>")
-    .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
+    .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_match, label: string, href: string) =>
+      isSafeHref(href) ? `<a href="${href}">${label}</a>` : label,
+    );
 }
 
 /**
@@ -336,10 +367,11 @@ async function readRecord(repoRoot: string, freezes: FreezeRecord[]): Promise<Hu
 
 function versionLinks(record: FreezeRecord): string {
   const links = [
-    record.previewUrl
+    // Both come from freezes.json, which is tracked — the same check as a link in prose.
+    record.previewUrl && isSafeHref(record.previewUrl)
       ? `<a href="${escapeHtml(record.previewUrl)}">Preview</a>`
       : "<span>Preview unavailable</span>",
-    record.storybookUrl
+    record.storybookUrl && isSafeHref(record.storybookUrl)
       ? `<a href="${escapeHtml(record.storybookUrl)}">Storybook</a>`
       : "<span>Storybook unavailable</span>",
   ];
@@ -454,9 +486,10 @@ function renderTimeline(record: HubRecord): string {
   }
   const rows = record.timeline
     .map((row) => {
-      const text = row.href
-        ? `<a href="${escapeHtml(row.href)}">${renderInline(row.text)}</a>`
-        : renderInline(row.text);
+      const text =
+        row.href && isSafeHref(row.href)
+          ? `<a href="${escapeHtml(row.href)}">${renderInline(row.text)}</a>`
+          : renderInline(row.text);
       return `<tr><td class="mono">${escapeHtml(row.date)}</td><td><span class="chip ${row.kind === "freeze" ? "freeze" : ""}">${escapeHtml(row.kind)}</span></td><td>${text}</td></tr>`;
     })
     .join("");

@@ -6,6 +6,7 @@ import {
   type ConceptEntry,
   resolveConcept,
 } from "../add-concept.js";
+import { CliError, errorMessage } from "../cli-error.js";
 
 /**
  * Bare `forge add` prints the whole set rather than an error.
@@ -54,18 +55,16 @@ export function registerAddCommand(program: Command): void {
         const entry = CONCEPT_CATALOGUE[result.type];
         if (entry.guidance) console.log(`  ${entry.guidance}`);
       } catch (error) {
-        console.error(`forge add: ${error instanceof Error ? error.message : String(error)}`);
         // A near miss is the common case — `forge add flow` for `flows`,
         // `forge add ddr` for a decision — so name the neighbour rather than
         // making the user run a second command to find it.
-        if (resolveConcept(concept) === null) {
-          console.error(
-            `  the set is: ${Object.values(CONCEPT_CATALOGUE)
-              .map((entry) => entry.keys[0])
-              .join(", ")}`,
-          );
-        }
-        process.exitCode = 1;
+        const set =
+          resolveConcept(concept) === null
+            ? `\n  the set is: ${Object.values(CONCEPT_CATALOGUE)
+                .map((entry) => entry.keys[0])
+                .join(", ")}`
+            : "";
+        throw new CliError(`forge add: ${errorMessage(error)}${set}`);
       }
     });
 }

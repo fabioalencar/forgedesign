@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { CliError } from "./cli-error.js";
 import { registerAddCommand } from "./commands/add.js";
 import { registerAdoptCommand } from "./commands/adopt.js";
+import { registerChangelogCommand } from "./commands/changelog.js";
 import { registerCheckCommand } from "./commands/check.js";
 import { registerCommentsCommand } from "./commands/comments.js";
 import { registerDashCommand } from "./commands/dash.js";
@@ -42,6 +44,7 @@ registerCloudAuthCommands(program);
 registerPublishCommand(program);
 registerSkillsCommand(program);
 registerDdrCommand(program);
+registerChangelogCommand(program);
 registerQuestionCommand(program);
 registerReviewCommand(program);
 registerAddCommand(program);
@@ -64,7 +67,10 @@ if (stale) {
   process.exit(1);
 }
 
+// The one place a command's failure reaches the user (DDR-157): a CliError is a
+// refusal the command worded and gives its own exit code; anything else is an
+// error the code did not expect, printed the same way and exiting 1.
 program.parseAsync(process.argv).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
+  process.exitCode = error instanceof CliError ? error.exitCode : 1;
 });

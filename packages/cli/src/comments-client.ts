@@ -2,7 +2,7 @@
 // DDR-009. Kept dependency-free: Node's global fetch. Shared with the
 // dashboard via the @forgedesign/cli/comments-client export.
 
-import { cloudBase, NOT_SIGNED_IN } from "./cloud-auth.js";
+import { apiUrl, cloudBase, NOT_SIGNED_IN } from "./cloud-auth.js";
 import { readUserConfig } from "./config.js";
 import { readFreezes } from "./freezes.js";
 
@@ -38,8 +38,10 @@ export function commentsApiFor(userConfig: {
   commentsApiKey?: string;
 }): CommentsApiConfig {
   if (userConfig.cloudToken) {
-    const origin = cloudBase(userConfig.cloudApiUrl);
-    return { apiUrl: `${origin}/api/cli`, apiKey: userConfig.cloudToken };
+    return {
+      apiUrl: apiUrl(cloudBase(userConfig.cloudApiUrl), "/api/cli"),
+      apiKey: userConfig.cloudToken,
+    };
   }
   if (userConfig.commentsApiUrl && userConfig.commentsApiKey) {
     return { apiUrl: userConfig.commentsApiUrl, apiKey: userConfig.commentsApiKey };
@@ -47,10 +49,6 @@ export function commentsApiFor(userConfig: {
   throw new Error(
     `${NOT_SIGNED_IN}. Feedback from Figma or GitHub issues needs no account: \`forge comments import\`.`,
   );
-}
-
-function url(config: CommentsApiConfig, pathname: string): string {
-  return `${config.apiUrl.replace(/\/$/, "")}${pathname}`;
 }
 
 function authHeaders(config: CommentsApiConfig): Record<string, string> {
@@ -73,7 +71,7 @@ export async function registerSnapshot(
   config: CommentsApiConfig,
   snapshot: { id: string; projectId: string; tag: string; pin: string; previewUrl: string | null },
 ): Promise<void> {
-  const res = await fetch(url(config, "/snapshots"), {
+  const res = await fetch(apiUrl(config.apiUrl, "/snapshots"), {
     method: "POST",
     headers: authHeaders(config),
     body: JSON.stringify(snapshot),
@@ -117,10 +115,22 @@ export interface ApiComment {
   ua_version?: string | null;
   os_family?: string | null;
   pixel_ratio?: number | null;
+  /**
+   * Where the comment stands on the service. Absent from a service that
+   * predates the trail, which reads as `open`. `withdrawn` is the one its
+   * author chose (DDR-165): its words are gone, and when the record already
+   * holds what it became, the next pull carries it again so triage hears.
+   */
+  status?: "open" | "addressed" | "declined" | "withdrawn";
+  /** when the author last changed the words, before the pull (DDR-165) */
+  edited_at?: string | null;
   created_at: string;
 }
 
-/** One comment's place in the resolution trail (T-294). */
+/**
+ * One comment's place in the resolution trail (T-294). Never `withdrawn`: that
+ * is the author's to say, and the service ignores the trail for it.
+ */
 export interface CommentResolution {
   commentId: string;
   status: "open" | "addressed" | "declined";
@@ -140,7 +150,7 @@ export async function syncResolutions(
   resolutions: CommentResolution[],
 ): Promise<number> {
   if (resolutions.length === 0) return 0;
-  const res = await fetch(url(config, "/comments/resolve"), {
+  const res = await fetch(apiUrl(config.apiUrl, "/comments/resolve"), {
     method: "POST",
     headers: authHeaders(config),
     body: JSON.stringify({ snapshotId, resolutions }),
@@ -153,9 +163,12 @@ export async function fetchUnfetchedComments(
   config: CommentsApiConfig,
   snapshotId: string,
 ): Promise<ApiComment[]> {
-  const res = await fetch(url(config, `/comments?snapshot=${snapshotId}&unfetched=true`), {
-    headers: authHeaders(config),
-  });
+  const res = await fetch(
+    apiUrl(config.apiUrl, `/comments?snapshot=${snapshotId}&unfetched=true`),
+    {
+      headers: authHeaders(config),
+    },
+  );
   await expectOk(res, "comment fetch");
   return ((await res.json()) as { comments: ApiComment[] }).comments;
 }
@@ -166,7 +179,7 @@ export async function markCommentsFetched(
   commentIds: string[],
 ): Promise<void> {
   if (commentIds.length === 0) return;
-  const res = await fetch(url(config, "/comments/mark-fetched"), {
+  const res = await fetch(apiUrl(config.apiUrl, "/comments/mark-fetched"), {
     method: "POST",
     headers: authHeaders(config),
     body: JSON.stringify({ snapshotId, commentIds }),
@@ -178,7 +191,7 @@ export async function archiveSnapshot(
   config: CommentsApiConfig,
   snapshotId: string,
 ): Promise<{ alreadyArchived: boolean }> {
-  const res = await fetch(url(config, `/snapshots/${snapshotId}/archive`), {
+  const res = await fetch(apiUrl(config.apiUrl, `/snapshots/${snapshotId}/archive`), {
     method: "POST",
     headers: authHeaders(config),
   });
@@ -199,7 +212,7 @@ export async function setSnapshotWindow(
   snapshotId: string,
   closesAt: string | null,
 ): Promise<{ closesAt: string | null }> {
-  const res = await fetch(url(config, `/snapshots/${snapshotId}/window`), {
+  const res = await fetch(apiUrl(config.apiUrl, `/snapshots/${snapshotId}/window`), {
     method: "POST",
     headers: authHeaders(config),
     body: JSON.stringify({ closesAt }),
@@ -214,33 +227,40 @@ async function countUnfetchedComments(
   snapshotId: string,
   timeoutMs: number,
 ): Promise<number> {
-  const res = await fetch(url(config, `/comments?snapshot=${snapshotId}&unfetched=true`), {
-    headers: authHeaders(config),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const res = await fetch(
+    apiUrl(config.apiUrl, `/comments?snapshot=${snapshotId}&unfetched=true`),
+    {
+      headers: authHeaders(config),
+      signal: AbortSignal.timeout(timeoutMs),
+    },
+  );
   await expectOk(res, "comment count");
   return ((await res.json()) as { comments: unknown[] }).comments.length;
 }
 
-/**
- * Total unfetched comments across a project's registered snapshots (spec §2
- * status / §4 portfolio). Null means "nothing to count": comment API not
- * configured, no registered snapshots, or the API unreachable — callers show
- * n/a rather than a scary zero. Short timeout so status stays snappy.
- */
 /**
  * Why there is no number, when there is no number. These were one `null` and
  * one sentence naming all of them at once, so the line could not distinguish
  * "you have not configured this" from "it is configured and nothing has been
  * frozen yet" — which is exactly the question someone has just after setting
  * the key up (TASK-332).
+ *
+ * `timed-out` is apart from `unreachable` for the same reason (TASK-531): the
+ * deadline was 1.5 s, Forge Cloud answers in 2.2–3 s, and every timeout was
+ * reported as "check the URL and key" to someone whose URL and key were fine.
  */
 export type UnfetchedCount =
   | { kind: "count"; count: number }
   | { kind: "not-configured" }
   | { kind: "no-snapshots" }
+  | { kind: "timed-out"; afterMs: number }
   | { kind: "unreachable" };
 
+/**
+ * Total unfetched comments across a project's registered snapshots (spec §2
+ * status / §4 portfolio). The default deadline is the dashboard's, which
+ * renders while it waits; `forge status` passes a longer one.
+ */
 export async function projectUnfetchedCount(
   repoRoot: string,
   timeoutMs = 1500,
@@ -260,7 +280,10 @@ export async function projectUnfetchedCount(
       snapshotIds.map((id) => countUnfetchedComments(config, id, timeoutMs)),
     );
     return { kind: "count", count: counts.reduce((sum, n) => sum + n, 0) };
-  } catch {
+  } catch (error) {
+    // `AbortSignal.timeout` rejects with a TimeoutError: the service did not
+    // answer in time, which says nothing yet about the URL or the key.
+    if ((error as Error).name === "TimeoutError") return { kind: "timed-out", afterMs: timeoutMs };
     // a bad key, a wrong URL, or the service being down — indistinguishable
     // from here, but all of them mean "go look", which `null` never said
     return { kind: "unreachable" };

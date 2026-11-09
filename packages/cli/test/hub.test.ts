@@ -298,3 +298,56 @@ describe("generateReleaseHub", () => {
     await expect(fs.access(path.join(sandbox, "hub", "index.html"))).rejects.toThrow();
   });
 });
+
+describe("links on the hub (TASK-525)", () => {
+  it("keeps a link's text and drops the link when its target would run instead of open", async () => {
+    await seedRecord();
+    // What triage writes from a stakeholder's question: its title is their words,
+    // and a Question is on the page by default.
+    await write(
+      "design/questions/QUESTION-002.md",
+      "---\ntype: Question\nid: QUESTION-002\ntitle: See [the spec](javascript:onerror=alert;throw+document.domain)\ndate: 2026-07-06\nquestion_status: open\n---\n",
+    );
+    await write(
+      "design/glossary/scheme.md",
+      "---\ntype: Term\ntitle: Scheme\n---\n[Encoded](javascript:alert%28document.domain%29), [data](data:text/html;base64,PHNjcmlwdD4=), [upper](JavaScript:alert%281%29) and [docs](https://example.com/docs), [mail](mailto:team@example.com), [local](../handoff/alpha/).\n",
+    );
+    await generateReleaseHub(sandbox, [
+      { ...freeze("alpha"), previewUrl: "javascript:alert(1)", storybookUrl: "data:text/html,x" },
+    ]);
+    const html = await page();
+
+    expect(html.toLowerCase()).not.toContain('href="javascript:');
+    expect(html).not.toContain('href="data:');
+    expect(html).toContain("QUESTION-002 · See the spec");
+    expect(html).toContain("Encoded, data, upper and");
+    expect(html).toContain('<a href="https://example.com/docs">docs</a>');
+    expect(html).toContain('<a href="mailto:team@example.com">mail</a>');
+    expect(html).toContain('<a href="../handoff/alpha/">local</a>');
+    expect(html).toContain("<span>Preview unavailable</span>");
+    expect(html).toContain("<span>Storybook unavailable</span>");
+  });
+
+  it("refuses a target with surrounding whitespace, which a browser trims into a scheme (TASK-555)", async () => {
+    await seedRecord();
+    await generateReleaseHub(sandbox, [
+      {
+        ...freeze("alpha"),
+        previewUrl: " javascript:alert(1)",
+        storybookUrl: "javascript:alert(2)\u00a0",
+      },
+      {
+        ...freeze("beta"),
+        previewUrl: "https://example.com/beta/ ",
+        storybookUrl: "https://example.com/beta-storybook/",
+      },
+    ]);
+    const html = await page();
+
+    expect(html.toLowerCase()).not.toMatch(/href="\s*javascript:/);
+    expect(html).not.toContain('href="https://example.com/beta/ "');
+    expect(html).toContain('<a href="https://example.com/beta-storybook/">Storybook</a>');
+    expect(html).toContain("<span>Preview unavailable</span>");
+    expect(html).toContain("<span>Storybook unavailable</span>");
+  });
+});

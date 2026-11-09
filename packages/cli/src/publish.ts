@@ -14,13 +14,19 @@ import path from "node:path";
 import {
   audienceOf,
   buildBundleIndex,
+  type ChangeStatus,
   isReservedFilename,
   type ParsedConcept,
   parseConcept,
+  parsePageRows,
+  readChange,
 } from "@forgedesign/format";
 import { cloudApiUrl, NOT_SIGNED_IN } from "./cloud-auth.js";
 import { readUserConfig } from "./config.js";
-import { fileAtRef, git } from "./git.js";
+import { readFreezes } from "./freezes.js";
+import { END_OF_OPTIONS, fileAtRef, git } from "./git.js";
+import { normalizeRoute } from "./routes.js";
+import { CLI_VERSION } from "./version.js";
 
 /** Content types the review runtime needs to serve a static prototype correctly. */
 const CONTENT_TYPES: Record<string, string> = {
@@ -170,7 +176,7 @@ export async function collectRecord(
       "ls-tree",
       "-r",
       "--name-only",
-      "--end-of-options",
+      END_OF_OPTIONS,
       tag,
       "--",
       recordRoot,
@@ -211,7 +217,147 @@ export async function collectRecord(
     content: bytes.toString("base64"),
     contentType: MARKDOWN,
   }));
-  return { files: [index, ...files], kept: kept.length, withheld };
+
+  // The changelog travels as a generated file beside the concepts (DDR-176):
+  // each entry already read, with the version it shipped in, which is derived
+  // here because the tags are here. Cloud holds only published versions and no
+  // format parser, so it displays this file rather than working anything out;
+  // and writing the version into the entries would put a field in the record
+  // that Git already answers.
+  const concepts = kept.map((entry) => entry.concept);
+  const changes = concepts.filter((concept) => concept.type === "Change");
+  const derived: PublishFile[] = [];
+  if (changes.length > 0) {
+    const changelog = await buildChangelog(root, tag, recordRoot, concepts);
+    derived.push({
+      path: CHANGELOG_FILE,
+      content: Buffer.from(`${JSON.stringify(changelog, null, 2)}\n`).toString("base64"),
+      contentType: "application/json",
+    });
+  }
+  return { files: [index, ...derived, ...files], kept: kept.length, withheld };
+}
+
+/**
+ * The generated file that carries the change entries as Cloud reads them. Its
+ * name cannot collide with a concept: only `.md` files cross as concepts.
+ */
+export const CHANGELOG_FILE = "changelog.json";
+
+/** One change entry as `changelog.json` carries it. */
+export interface ChangelogEntry {
+  id: string;
+  title: string;
+  status: ChangeStatus | null;
+  /** what a reader will notice, as the creator wrote it */
+  body: string;
+  /** the day the entry was written */
+  date: string | null;
+  /** normalised, root-relative */
+  routes: string[];
+  requestedBy: string | null;
+  links: string[];
+  /** the freeze a done entry shipped in; null for coming and exploring ones */
+  shippedIn: ShippedIn | null;
+}
+
+export interface ChangelogFile {
+  generated: { by: string; at: string };
+  /** the version this file crossed with */
+  tag: string;
+  entries: ChangelogEntry[];
+  /** route → the page's title, from the page manifest when it crossed (DDR-130) */
+  pages: Record<string, string>;
+}
+
+/**
+ * The changelog for a published tag, from the concepts that crossed with it:
+ * every change entry read with the format's own reader, and the page titles
+ * from `pages.md` when it crossed, so Cloud can name a route without parsing.
+ */
+export async function buildChangelog(
+  root: string,
+  tag: string,
+  recordRoot: string,
+  concepts: readonly ParsedConcept[],
+): Promise<ChangelogFile> {
+  const changes = concepts.filter((concept) => concept.type === "Change");
+  const shipped = await shippedVersions(root, tag, recordRoot, changes);
+  const manifest = concepts.find((concept) => concept.type === "Page Manifest");
+  const pages: Record<string, string> = {};
+  for (const row of manifest ? parsePageRows(manifest.body).rows : []) {
+    pages[normalizeRoute(row.route)] ??= row.title;
+  }
+  const entries = changes.map((concept): ChangelogEntry => {
+    const { change } = readChange(concept);
+    return {
+      id: change.id,
+      title: change.title,
+      status: change.status,
+      body: concept.body.trim(),
+      date: concept.date,
+      routes: change.routes.map(normalizeRoute),
+      requestedBy: change.requestedBy,
+      links: change.links,
+      shippedIn: shipped[change.id] ?? null,
+    };
+  });
+  return {
+    generated: { by: `forge-cli/${CLI_VERSION}`, at: new Date().toISOString() },
+    tag,
+    entries,
+    pages,
+  };
+}
+
+export interface ShippedIn {
+  tag: string;
+  /** the freeze's date; null when the tag is not in freezes.json */
+  date: string | null;
+}
+
+/**
+ * The freeze each `done` change shipped in: walking back from `tag` through
+ * the freezes before it, the earliest tag of the run in which the entry reads
+ * `done` (DDR-176). The run, not the first ever: an entry put back to
+ * `exploring` and shipped again later shipped in the later version.
+ *
+ * Read from each tag's tree, the way the feature log reads "closed since",
+ * so nothing in the record has to say it and nothing can disagree with Git.
+ */
+export async function shippedVersions(
+  root: string,
+  tag: string,
+  recordRoot: string,
+  changes: readonly ParsedConcept[],
+): Promise<Record<string, ShippedIn>> {
+  const freezes = await readFreezes(root).catch(() => []);
+  const at = freezes.findIndex((freeze) => freeze.tag === tag);
+  const earlier = at === -1 ? [] : freezes.slice(0, at).reverse();
+  const shipped: Record<string, ShippedIn> = {};
+  for (const concept of changes) {
+    if (!concept.id || concept.domainStatus?.value !== "done") continue;
+    const repoPath = path.posix.join(recordRoot, concept.relPath);
+    let first: ShippedIn = { tag, date: freezes[at]?.date ?? null };
+    for (const freeze of earlier) {
+      if ((await changeStatusAt(root, freeze.tag, repoPath)) !== "done") break;
+      first = { tag: freeze.tag, date: freeze.date };
+    }
+    shipped[concept.id] = first;
+  }
+  return shipped;
+}
+
+async function changeStatusAt(root: string, ref: string, repoPath: string): Promise<string | null> {
+  try {
+    const bytes = await fileAtRef(root, ref, repoPath);
+    return (
+      parseConcept(path.posix.basename(repoPath), bytes.toString("utf8")).domainStatus?.value ??
+      null
+    );
+  } catch {
+    return null;
+  }
 }
 
 export interface PublishResult {
@@ -247,6 +393,11 @@ export interface PublishResult {
    * crossing — which ignores the field and hosts the build as before.
    */
   recordFileCount?: number;
+  /**
+   * How many route captures Cloud stored (DDR-177). Absent from a service that
+   * predates them, which ignores the list and hosts the build as before.
+   */
+  captureCount?: number;
 }
 
 export interface PublishRefusal {
@@ -308,6 +459,7 @@ interface PublishRequest {
   message?: string;
   files: PublishFile[];
   record?: PublishFile[];
+  captures?: PublishFile[];
 }
 
 export async function publishBuild(input: {
@@ -321,6 +473,8 @@ export async function publishBuild(input: {
   record?: RecordSnapshot;
   /** the freeze's message, which Cloud shows beside the version */
   message?: string;
+  /** one JPEG per route, from `captureRoutes`; omitted when none were taken (DDR-177) */
+  captures?: PublishFile[];
 }): Promise<PublishOutcome> {
   const config = await readUserConfig();
   if (!config.cloudToken) {
@@ -349,6 +503,7 @@ export async function publishBuild(input: {
     message: input.message,
     files,
     record: input.record && input.record.files.length > 0 ? input.record.files : undefined,
+    captures: input.captures && input.captures.length > 0 ? input.captures : undefined,
   };
 
   // The server says how it takes a publish (DDR-154): Cloud stages uploads
@@ -365,8 +520,10 @@ export async function publishBuild(input: {
 const UPLOAD_CONCURRENCY = 8;
 const UPLOAD_ATTEMPTS = 3;
 
+type UploadKind = "build" | "record" | "capture";
+
 interface PresignedUpload {
-  kind: "build" | "record";
+  kind: UploadKind;
   path: string;
   url: string;
   contentType: string;
@@ -380,7 +537,7 @@ interface PresignedUpload {
  */
 async function publishStaged(request: PublishRequest): Promise<PublishOutcome> {
   const bytes = new Map<string, Buffer>();
-  const declare = (kind: "build" | "record") => (file: PublishFile) => {
+  const declare = (kind: UploadKind) => (file: PublishFile) => {
     const data = Buffer.from(file.content, "base64");
     bytes.set(`${kind}:${file.path}`, data);
     return {
@@ -404,6 +561,8 @@ async function publishStaged(request: PublishRequest): Promise<PublishOutcome> {
         files: request.files.map(declare("build")),
         // Beside the build, never inside it (DDR-129).
         record: (request.record ?? []).map(declare("record")),
+        // Its own list too (DDR-177); a Cloud that predates captures ignores it.
+        ...(request.captures ? { captures: request.captures.map(declare("capture")) } : {}),
       }),
     }),
   );
@@ -417,9 +576,11 @@ async function publishStaged(request: PublishRequest): Promise<PublishOutcome> {
         const failure = data
           ? await putWithRetry(upload, data)
           : "Cloud asked for a file this build does not have";
-        return failure
-          ? `${upload.kind === "record" ? "design/" : ""}${upload.path}: ${failure}`
-          : null;
+        // A capture that will not upload is left out, never the reason a build
+        // is not hosted (DDR-177); Cloud's `captureCount` says how many landed.
+        if (upload.kind === "capture") return null;
+        const shown = upload.kind === "record" ? `design/${upload.path}` : upload.path;
+        return failure ? `${shown}: ${failure}` : null;
       }),
     );
     const failed = failures.find((failure) => failure !== null);

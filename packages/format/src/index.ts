@@ -5,6 +5,7 @@
 export * from "./bundle.js";
 export * from "./bundle-index.js";
 export * from "./calendar.js";
+export * from "./changes.js";
 export * from "./checks.js";
 export * from "./concepts.js";
 export * from "./decisions.js";

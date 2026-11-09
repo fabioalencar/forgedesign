@@ -1,5 +1,7 @@
-import { promises as fs } from "node:fs";
 import path from "node:path";
+import { writeFileAtomic } from "./atomic-write.js";
+import { withRepoLock } from "./file-lock.js";
+import { readJsonFile } from "./json-file.js";
 
 /** One entry per freeze, appended by `forge freeze` (spec §2 step 8). */
 export interface FreezeRecord {
@@ -41,32 +43,45 @@ export function freezesPath(repoRoot: string): string {
   return path.join(repoRoot, "freezes.json");
 }
 
+/**
+ * The calendar day an instant falls on where the creator is, as YYYY-MM-DD
+ * (TASK-534).
+ *
+ * `toISOString().slice(0, 10)` is the day in UTC, which is tomorrow for the
+ * last hours of every evening west of Greenwich: a freeze cut at 21:30 in São
+ * Paulo was dated the next day, and so was every decision, question and task
+ * stamped then. A record's dates are the creator's calendar, not the server's.
+ */
+export function localIsoDate(instant: Date): string {
+  const month = String(instant.getMonth() + 1).padStart(2, "0");
+  const day = String(instant.getDate()).padStart(2, "0");
+  return `${instant.getFullYear()}-${month}-${day}`;
+}
+
 /** Today as an ISO calendar day (YYYY-MM-DD) — freeze/sketch date stamps. */
 export function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localIsoDate(new Date());
 }
 
 export async function readFreezes(repoRoot: string): Promise<FreezeRecord[]> {
-  try {
-    const parsed = JSON.parse(await fs.readFile(freezesPath(repoRoot), "utf8")) as unknown;
-    return Array.isArray(parsed) ? (parsed as FreezeRecord[]) : [];
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    // A freezes.json mangled by a bad merge should name itself, not crash with a
-    // bare parser message.
-    if (error instanceof SyntaxError) {
-      throw new Error(
-        `${freezesPath(repoRoot)} is not valid JSON — fix or delete it (${error.message})`,
-      );
-    }
-    throw error;
-  }
+  const parsed = await readJsonFile(freezesPath(repoRoot));
+  return Array.isArray(parsed) ? (parsed as FreezeRecord[]) : [];
 }
 
+/** The lock every writer of `freezes.json` takes (TASK-548). */
+const FREEZES_LOCK = "freezes";
+
 export async function appendFreeze(repoRoot: string, record: FreezeRecord): Promise<void> {
-  const freezes = await readFreezes(repoRoot);
-  freezes.push(record);
-  await fs.writeFile(freezesPath(repoRoot), `${JSON.stringify(freezes, null, 2)}\n`, "utf8");
+  // Under the lock the check is the one that counts: two freezes of the same
+  // tag both passed it before either wrote.
+  await withRepoLock(repoRoot, FREEZES_LOCK, async () => {
+    const freezes = await readFreezes(repoRoot);
+    if (findFreeze(freezes, record.tag)) {
+      throw new Error(`freezes.json already has an entry for "${record.tag}"`);
+    }
+    freezes.push(record);
+    await writeFileAtomic(freezesPath(repoRoot), `${JSON.stringify(freezes, null, 2)}\n`);
+  });
 }
 
 /**
@@ -82,12 +97,14 @@ export async function setFreezeSnapshotId(
   tag: string,
   snapshotId: string,
 ): Promise<boolean> {
-  const freezes = await readFreezes(repoRoot);
-  const entry = findFreeze(freezes, tag);
-  if (!entry) return false;
-  entry.snapshotId = snapshotId;
-  await fs.writeFile(freezesPath(repoRoot), `${JSON.stringify(freezes, null, 2)}\n`, "utf8");
-  return true;
+  return withRepoLock(repoRoot, FREEZES_LOCK, async () => {
+    const freezes = await readFreezes(repoRoot);
+    const entry = findFreeze(freezes, tag);
+    if (!entry) return false;
+    entry.snapshotId = snapshotId;
+    await writeFileAtomic(freezesPath(repoRoot), `${JSON.stringify(freezes, null, 2)}\n`);
+    return true;
+  });
 }
 
 export function findFreeze(freezes: FreezeRecord[], tag: string): FreezeRecord | undefined {

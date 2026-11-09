@@ -1,6 +1,6 @@
 {
   "name": "@forgedesign/cli",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "homepage": "https://useforge.design",
   "bugs": "https://github.com/fabioalencar/forgedesign/issues",
@@ -25,6 +25,14 @@
     "./todo": {
       "types": "./dist/todo.d.ts",
       "import": "./dist/todo.js"
+    },
+    "./file-lock": {
+      "types": "./dist/file-lock.d.ts",
+      "import": "./dist/file-lock.js"
+    },
+    "./atomic-write": {
+      "types": "./dist/atomic-write.d.ts",
+      "import": "./dist/atomic-write.js"
     },
     "./task-ledger": {
       "types": "./dist/task-ledger.d.ts",
@@ -66,21 +74,21 @@
       "types": "./dist/doctor.d.ts",
       "import": "./dist/doctor.js"
     },
-    "./commands/comments": {
-      "types": "./dist/commands/comments.d.ts",
-      "import": "./dist/commands/comments.js"
+    "./comments": {
+      "types": "./dist/comments.d.ts",
+      "import": "./dist/comments.js"
     },
-    "./commands/init": {
-      "types": "./dist/commands/init.d.ts",
-      "import": "./dist/commands/init.js"
+    "./init": {
+      "types": "./dist/init.d.ts",
+      "import": "./dist/init.js"
     },
-    "./commands/explore": {
-      "types": "./dist/commands/explore.d.ts",
-      "import": "./dist/commands/explore.js"
+    "./explore": {
+      "types": "./dist/explore.d.ts",
+      "import": "./dist/explore.js"
     },
-    "./commands/freeze": {
-      "types": "./dist/commands/freeze.d.ts",
-      "import": "./dist/commands/freeze.js"
+    "./freeze-ceremony": {
+      "types": "./dist/freeze-ceremony.d.ts",
+      "import": "./dist/freeze-ceremony.js"
     }
   },
   "files": [

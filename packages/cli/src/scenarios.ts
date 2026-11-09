@@ -20,6 +20,7 @@ import {
   scanBundle,
   withFrontmatter,
 } from "@forgedesign/format";
+import { writeNewFile } from "./atomic-write.js";
 import { bundleRootOf, writeBundleIndex } from "./bundle-index.js";
 
 const BASE32_ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz"; // Crockford, lowercase
@@ -360,10 +361,9 @@ export async function saveScenario(
   // the legacy title-derived slug still names the file.
   const stem = location.concept ? await nextScenarioId(root) : slug;
   const savedFilePath = path.join(location.dir, `${stem}.md`);
-  await fs.writeFile(
+  await writeNewFile(
     savedFilePath,
     location.concept ? scenarioConceptText(stem, scenario) : serializeScenario(scenario),
-    "utf8",
   );
   await fs.writeFile(
     path.join(root, declarations),

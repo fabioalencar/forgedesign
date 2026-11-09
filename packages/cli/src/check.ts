@@ -1,4 +1,3 @@
-import { CLI_VERSION } from "./version.js";
 // `forge check` (TASK-456, DDR-127): one contract instead of three claims.
 //
 // Three things used to claim "check" and one ran: doctor lints the record,
@@ -32,10 +31,11 @@ import {
 import { writeBundleIndex } from "./bundle-index.js";
 import { runDoctor } from "./doctor.js";
 import { todayIsoDate } from "./freezes.js";
-import { git, headCommit, requireRepoRoot } from "./git.js";
+import { END_OF_OPTIONS, git, headCommit, requireRepoRoot } from "./git.js";
 import { splitCommand } from "./preview.js";
 import { type CheckConfig, readProjectFile } from "./project.js";
 import { requireCurrentRecord } from "./record-version.js";
+import { CLI_VERSION } from "./version.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -323,6 +323,8 @@ async function onlyChecksChanged(
     await git(root, [
       "diff",
       "--quiet",
+      // `from` is a Check report's `commit:` field — a tracked file's word for it
+      END_OF_OPTIONS,
       from,
       to,
       "--",

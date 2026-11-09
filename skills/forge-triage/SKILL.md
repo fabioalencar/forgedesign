@@ -90,6 +90,16 @@ context. Text that gets in stays in.
    ios" — so carry it into the task you create; it is not stored in the record and ages
    out of the service, so the task is where it survives.
 
+   **A staged item with `"status": "withdrawn"` was taken back by its author** (DDR-165):
+   its words are gone, and there is nothing to file. Leave it out of the proposal; apply
+   writes nothing for it even if you include it. The stage log names what it already
+   became, if anything (`FEEDBACK-012 — comment … was withdrawn by its author`). When it
+   names a `FEEDBACK-###` or `QUESTION-###`, tell the creator: the record keeps that item
+   and its quote, and what the withdrawal means for it, or for the task it became, is
+   their call. Change the item only on their word, through the usual edits, never by
+   deleting it. A reply to a withdrawn comment is still a comment and is dispositioned
+   like any other.
+
 3. **Write the proposal** to `.forge/triage/<tag>/proposal.json`:
    ```json
    {
@@ -103,8 +113,8 @@ context. Text that gets in stays in.
      ]
    }
    ```
-   Every staged comment should have an entry — one you skip becomes neither feedback nor a
-   task, silently invisible to the rest of the record. If you genuinely don't know what to
+   Every staged comment should have an entry, except a withdrawn one — one you skip
+   becomes neither feedback nor a task, silently invisible to the rest of the record. If you genuinely don't know what to
    do with one, disposition it `pending` rather than leaving it out.
 
 4. **Apply it:**
@@ -114,13 +124,15 @@ context. Text that gets in stays in.
    This writes each item into the record's feedback (and a new or linked task into the task ledger for
    accepted items), each question into the record's questions, then marks the comments fetched. It fails before writing anything if a
    `taskId`/`ddrId` you referenced doesn't actually exist — fix the proposal and rerun
-   rather than guessing at a different id.
+   rather than guessing at a different id. It also refuses, before writing, when a staged
+   comment changed on the review since it was staged: a stakeholder can edit or delete a
+   comment until it is applied (DDR-165). Stage again and disposition the fresh batch.
 
 5. **Run `forge doctor`** and fix anything it reports.
 
 6. **Tell the user what happened** — how many feedback items, how many new/linked tasks,
-   and whether anything was skipped (the apply output reports this) — so they know what to
-   review next.
+   whether anything was skipped, and which items' comments were withdrawn by their authors
+   (the apply output reports this) — so they know what to review next.
 
 ## What the stakeholder sees afterwards
 

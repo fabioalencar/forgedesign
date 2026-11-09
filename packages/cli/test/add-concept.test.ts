@@ -18,7 +18,7 @@ import {
   resolveConcept,
   slugify,
 } from "../src/add-concept.js";
-import { initProject } from "../src/commands/init.js";
+import { initProject } from "../src/init.js";
 
 let sandbox: string;
 let repo: string;

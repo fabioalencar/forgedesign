@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { initProject } from "../src/commands/init.js";
+import { initProject } from "../src/init.js";
 
 const mkdirWrite = (dir: string, file: string) =>
   `node -e "const fs=require('fs');fs.mkdirSync('${dir}',{recursive:true});fs.writeFileSync('${dir}/${file}','<html><head></head><body>ok</body></html>')"`;

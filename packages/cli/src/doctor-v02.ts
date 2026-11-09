@@ -28,12 +28,13 @@ import {
   parsePageRows,
   parseTodos,
   ROOT_CONCEPT_FILES,
+  readChange,
   type ScannedBundle,
   scanBundle,
 } from "@forgedesign/format";
 import { type DoctorFinding, type DoctorResult, finding } from "./doctor-types.js";
 import { readFreezes } from "./freezes.js";
-import { repoRoot as findRepoRoot, git } from "./git.js";
+import { filesAtRef, repoRoot as findRepoRoot } from "./git.js";
 import { normalizeRoute } from "./routes.js";
 
 /** Which rule name each concept-level problem reports under. */
@@ -110,6 +111,7 @@ export async function runDoctorV02(
     ...checkTaskStatuses(todos),
     ...checkFeedbackRules(bundle),
     ...checkPageManifest(bundle),
+    ...checkChangeEntries(bundle),
     ...(await checkGeneratedFiles(root, recordRoot, bundle, latestFreezeId)),
     ...(await checkDecisionImmutability(root, recordRoot, bundle, options.base)),
     ...checkFormatVersion(manifest),
@@ -295,6 +297,30 @@ function checkPageManifest(bundle: ScannedBundle): DoctorFinding[] {
           file,
         ),
       );
+    }
+  }
+  return findings;
+}
+
+/**
+ * Rule 14: a change entry's lists are the shapes the spec gives (DDR-176) —
+ * root-relative routes, http(s) links, and record ids in `refs` (which rule 5
+ * then resolves, like any id in the file).
+ *
+ * A route `pages.md` does not declare is not a finding. DDR-130 makes the
+ * manifest optional and lets a route with no row read as it did without one;
+ * failing a record because its manifest is incomplete would make the optional
+ * file mandatory by the back door. `forge changelog apply` mentions such a
+ * route instead, when the entry is written.
+ */
+function checkChangeEntries(bundle: ScannedBundle): DoctorFinding[] {
+  const findings: DoctorFinding[] = [];
+  for (const concept of bundle.concepts) {
+    if (concept.type !== "Change") continue;
+    const file = relFile(concept.relPath);
+    const id = concept.id ?? "(no id)";
+    for (const problem of readChange(concept).problems) {
+      findings.push(finding("change-entry", `${id}: ${problem.message}`, file));
     }
   }
   return findings;
@@ -576,7 +602,10 @@ function relFile(relPath: string): string {
   return `${BUNDLE_DIR}/${relPath}`;
 }
 
-/** `git show HEAD:<path>` for each path, skipping ones git does not know. */
+/**
+ * Each path as it is at `base`, skipping ones git does not know there — read in
+ * one batch, since this runs over every accepted decision (TASK-533).
+ */
 async function readCommitted(
   root: string,
   relPaths: string[],
@@ -590,13 +619,15 @@ async function readCommitted(
   const gitRoot = await findRepoRoot(realRoot);
   if (!gitRoot) return contents;
 
-  for (const relPath of relPaths) {
-    const fromGitRoot = path.relative(gitRoot, path.join(realRoot, relPath));
-    try {
-      contents.set(relPath, await git(gitRoot, ["show", `${base}:${fromGitRoot}`]));
-    } catch {
-      // not committed yet
-    }
+  const fromGitRoot = new Map(
+    relPaths.map((relPath) => [
+      path.relative(gitRoot, path.join(realRoot, relPath)).split(path.sep).join("/"),
+      relPath,
+    ]),
+  );
+  const committed = await filesAtRef(gitRoot, base, [...fromGitRoot.keys()]);
+  for (const [gitPath, bytes] of committed) {
+    contents.set(fromGitRoot.get(gitPath) as string, bytes.toString("utf8"));
   }
   return contents;
 }

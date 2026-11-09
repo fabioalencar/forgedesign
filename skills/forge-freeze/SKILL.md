@@ -29,12 +29,34 @@ sure the tag actually tells the story of what changed, not just stamping a versi
 3. **Pick the tag.** A short, sequential, human name — `alpha`, `beta`, `mvp`, `v0.3` — not
    a date or a commit hash. Ask the user if it's not obvious from context.
 
-4. **Make sure the working tree is clean.** `forge freeze` refuses to run otherwise (freezes
-   are immutable, so nothing can be silently left out). If the feedback, tasks, or decisions
-   changes from earlier in this session (or anyone else's) aren't committed yet, commit them
+4. **Write the changelog entries, before the freeze** (DDR-176). Stakeholders read the
+   changelog, not the ledger, so what they are told changed is written for them:
+   ```bash
+   forge changelog draft
+   ```
+   It stages candidates in `.forge/changelog/<batch>.json`, every one `keep: false`: a
+   `done` candidate per task that reached Done since the last freeze, an `update` to
+   `done` for each coming or exploring entry whose tasks are now all done, and an
+   `exploring` candidate per task in Doing. Go through them **with the user**:
+   - Keep only the ones a stakeholder would notice — a UI or UX change, not a refactor.
+   - Rewrite each kept `title` and `body` in the reader's words: what they will see, not
+     what the task was called.
+   - Read `requested_by` and `links` back to the user before keeping them. The file crosses
+     to everyone holding the review PIN, so a name may need to become a team or an
+     organisation, or go. Never keep one silently.
+   - Add any `coming` entry the user wants stakeholders to see by hand, as a `new` entry
+     with `keep: true`; the draft never proposes Todo rows.
+   Then `forge changelog apply <batch>` and commit the entries. **This has to happen before
+   `forge freeze`**: the tag is cut before the freeze commit and the record crosses from the
+   tag, so an entry applied afterwards reaches stakeholders one version late. If the user
+   keeps nothing, that is a valid answer; apply writes nothing.
+
+5. **Make sure the working tree is clean.** `forge freeze` refuses to run otherwise (freezes
+   are immutable, so nothing can be silently left out). If the feedback, tasks, decisions or
+   change entries from earlier in this session (or anyone else's) aren't committed yet, commit them
    first — don't freeze over uncommitted record changes.
 
-5. **Run it:**
+6. **Run it:**
    ```bash
    forge freeze <tag> --message "<the summary from step 2>"
    ```
@@ -45,9 +67,10 @@ sure the tag actually tells the story of what changed, not just stamping a versi
    signing up: there is no open sign-up yet.
    Publish sends the build and, beside it, the record concepts whose `audience` is
    stakeholders as they stood at the tag — it prints how many crossed and how many stayed
-   home. Nothing owner-only leaves the repo.
+   home. Nothing owner-only leaves the repo. Change entries cross like the brief, with a
+   generated `changelog.json` naming the version each `done` entry shipped in.
 
-6. **Report back** exactly what the command printed: the review URL if you published, the
+7. **Report back** exactly what the command printed: the review URL if you published, the
    PIN that publish printed with it, and where the handoff pack landed. Don't paraphrase
    the URLs — copy them verbatim so the user can hand them off directly.
 
@@ -67,7 +90,7 @@ sure the tag actually tells the story of what changed, not just stamping a versi
      If the command reported any, tell the user — it is often worth a note to the person
      who raised them.
 
-7. **Run `forge doctor`** and fix anything it reports.
+8. **Run `forge doctor`** and fix anything it reports.
 
 ## The feature log
 

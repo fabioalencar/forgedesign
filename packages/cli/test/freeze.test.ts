@@ -3,9 +3,9 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runFreeze } from "../src/commands/freeze.js";
-import { initProject } from "../src/commands/init.js";
+import { runFreeze } from "../src/freeze-ceremony.js";
 import { readFreezes } from "../src/freezes.js";
+import { initProject } from "../src/init.js";
 
 let sandbox: string;
 let previousForgeHome: string | undefined;
@@ -173,6 +173,32 @@ describe("runFreeze", () => {
     const tags = execFileSync("git", ["tag"], { cwd: root }).toString().trim();
     expect(tags).toBe("");
     expect(await readFreezes(root)).toEqual([]);
+  });
+
+  it("puts back every file it wrote when the commit fails, so the retry works (TASK-539)", async () => {
+    const root = await makeDesignRepo();
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+    // A first freeze, so the second has a hub, a feature log and an index to change.
+    await runFreeze({ tag: "alpha", message: "first", cwd: root });
+    const hubBefore = await fs.readFile(path.join(root, "hub/index.html"), "utf8");
+    // The last step fails, after everything else has written: a hook refuses the commit.
+    const hook = path.join(root, ".git/hooks/pre-commit");
+    await fs.writeFile(hook, "#!/bin/sh\necho 'refused by hook' >&2\nexit 1\n", { mode: 0o755 });
+
+    await expect(runFreeze({ tag: "beta", message: "second", cwd: root })).rejects.toThrow();
+
+    expect(git("tag")).toBe("alpha");
+    expect((await readFreezes(root)).map((freeze) => freeze.tag)).toEqual(["alpha"]);
+    await expect(fs.access(path.join(root, "handoff/beta"))).rejects.toThrow();
+    expect(await fs.readFile(path.join(root, "hub/index.html"), "utf8")).toBe(hubBefore);
+    // Nothing staged, nothing modified, nothing new: the tree the freeze started from.
+    expect(git("status", "--porcelain")).toBe("");
+
+    await fs.rm(hook);
+    await expect(runFreeze({ tag: "beta", message: "second", cwd: root })).resolves.toMatchObject({
+      record: { tag: "beta" },
+    });
   });
 });
 

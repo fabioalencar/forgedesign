@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseConcept } from "@forgedesign/format";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initProject } from "../src/commands/init.js";
 import { runDoctor } from "../src/doctor.js";
+import { initProject } from "../src/init.js";
 import { addRecordQuestion } from "../src/questions.js";
 import { openTaskLedger } from "../src/task-ledger.js";
 
@@ -111,5 +111,23 @@ describe("forge task add (T-282)", () => {
     const todos = await fs.readFile(path.join(root, "design", "todos.md"), "utf8");
     expect(todos).toContain("TASK-001 Reduce header weight");
     expect(todos).toContain("genesis: QUESTION-001");
+  });
+});
+
+describe("a new concept never replaces a file at its path (TASK-537)", () => {
+  it("refuses, and keeps the other writer's file, when its id was taken mid-run", async () => {
+    const root = path.join(sandbox, "demo");
+    await initProject(root);
+    // Another writer's QUESTION-001, landed between this command's scan and its
+    // write — so the scan did not see it. A file the scan cannot read stands in.
+    const theirs = "a stakeholder's question, mid-write by the dashboard\n";
+    await write(root, "design/questions/QUESTION-001.md", theirs);
+
+    await expect(addRecordQuestion(root, { question: "Mine?" })).rejects.toThrow(
+      /QUESTION-001\.md already exists — something else wrote it while this ran/,
+    );
+    expect(await fs.readFile(path.join(root, "design/questions/QUESTION-001.md"), "utf8")).toBe(
+      theirs,
+    );
   });
 });

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runFreeze } from "../src/commands/freeze.js";
+import { runFreeze } from "../src/freeze-ceremony.js";
 import { collectHandoffContent, generateHandoffPack } from "../src/handoff.js";
 import { makeDesignRepo } from "./helpers.js";
 

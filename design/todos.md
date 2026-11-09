@@ -17,6 +17,11 @@ why a record cannot be divided.
   notes: The README states what the packages are. What a first-time reader needs is the loop end to end — `forge init` on a repository that already has code, a decision written while building, `forge freeze` producing a portable static build, and a stakeholder's comment landing back in the record as a task with a `genesis`. That is a walkthrough against a real project rather than prose, and it is the difference between a spec someone skims and a tool someone tries.
 
 ## Doing
+- [ ] TASK-005 Release 0.2.0: the changelog, route captures, and the source since 0.1.0
+  status: doing · opened: 2026-11-08
+  genesis: creator 2026-11-08; DDR-002
+  notes: The first full resync since 0.1.0 (105 files; 0.1.1 and 0.1.2 were focused releases). Adds `forge changelog` and the `Change` record type, route captures at publish, and the hardening done in the source in October (locked ledger writes, atomic state files, safe hub links, faster doctor, uniform refusals). The source fixed the hub's whitespace-wrapped `javascript:` links first, since this is the first release to ship that hub; its concurrent stale-lock race ships as a known issue named in the CHANGELOG. All three packages move to 0.2.0 (DDR-002); the Design Record format stays 0.2. Before publishing: the full public checks, then the packed packages installed into an empty directory. After: a clean registry install, the `v0.2.0` tag and GitHub release. Publish with `pnpm publish -r`, never `npm publish`.
+  progress: 2026-11-08 · Checked before publishing: `pnpm -r build`, then typecheck, lint, tests, knip, `check:versions` and doctor all pass. The three packed tarballs install into an empty directory together; `forge --version` prints 0.2.0, `forge init` then `forge doctor` is clean, `forge changelog draft` stages, and the moved library subpath `@forgedesign/cli/init` resolves. The CLI's `package.json` exports now match its build entries (the `commands/*` subpaths moved in the source; named as breaking in the CHANGELOG).
 
 ## Done
 

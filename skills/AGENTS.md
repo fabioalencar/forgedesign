@@ -76,6 +76,8 @@ Skip routine, expected work — see CLAUDE.md rule 3.
    `{ "title", "status" ("draft" unless the user explicitly signs off as final —
    never mark "accepted" on your own judgment), "contextSource", "decision", "why",
    "alternativesRejected"?, "consequences"? }`.
+   A decision intake staged is already there, with the `quote` that raised it and an empty
+   `decision` and `why`: fill those in place rather than writing a second file.
 3. Run `forge ddr apply <slug>`. It allocates the next `DDR-###` id and writes
    `decisions/DDR-###-<slug>.md`. Fix and rerun on a validation error — never hand-edit the
    output file.
@@ -104,15 +106,14 @@ Use when asked to intake a transcript, meeting note, or other raw context.
 1. Stage it if it isn't already: `forge intake <file>`. Note the printed id.
 2. Read the staged copy at `.forge/intake/<id>/source-<name>` — classify from *that* copy,
    not the original file.
-3. For each candidate worth surfacing, decide `type` (`task` | `ddr` | `artifact` — `ddr`
-   stages a stub only, for the ddr flow above to fill in later), a `title` (≤120 chars),
+3. For each candidate worth surfacing, decide `type` (`task` | `ddr` — a requested
+   deliverable is a task; accepting a `ddr` stages `.forge/ddr/<slug>.json` with an empty
+   decision and why, for the ddr flow above to fill before `forge ddr apply`), a `title` (≤120 chars),
    and a `quote` **copied verbatim, character-for-character, from the staged source** —
    `forge intake apply` silently drops any item whose quote isn't an exact substring, so
-   don't paraphrase or fix typos in it. `artifactType` is required (and only used) for
-   `type: "artifact"`: `user-flows`, `journey-maps`, `service-blueprints`, `site-audits`,
-   `personas`, `competitive-analysis`, `user-stories`, `data-model`, `process-flow`.
+   don't paraphrase or fix typos in it.
 4. Write `.forge/intake/<id>/proposal.json`: `{ "items": [{ "type", "title", "quote",
-   "notes"?, "artifactType"? }] }`.
+   "notes"? }] }`.
 5. Run `forge intake apply <id>` (`--confirm` if step 1 printed quality warnings you've
    reviewed). Watch for `dropped an unverifiable item` in the output.
 6. Tell the user what was staged and where to review it — accepting individual candidates
@@ -131,7 +132,14 @@ Use when asked to triage comments for a freeze.
    with `taskTitle`), `declined` (**requires an existing** `DDR-###` via `ddrId` — run the
    decision-recording flow above first if one doesn't exist yet; this command never
    fabricates a DDR), `deferred` (worth doing, not now), or `pending` (needs more thought).
-   Every staged comment needs an entry — one you omit becomes invisible to the record.
+   Every staged comment needs an entry, except a withdrawn one — one you omit becomes
+   invisible to the record. A staged item with `"status": "withdrawn"` was taken back by
+   its author (DDR-165): its words are gone, so leave it out of the proposal; apply writes
+   nothing for it even if you include it. The stage log names what it already became, if
+   anything (`FEEDBACK-012 — comment … was withdrawn by its author`); when it names a
+   `FEEDBACK-###` or `QUESTION-###`, tell the creator — the record keeps that item and its
+   quote, and what the withdrawal means for it is their call. Change it only on their
+   word, never by deleting it. A reply to a withdrawn comment is still a comment.
    A staged comment may carry the session it was written in (`ua_family`, `ua_version`,
    `os_family`, `pixel_ratio` — parsed facts, never a raw user agent). When a comment
    reports something broken, that is the reproduction context — carry it into the task you
@@ -140,8 +148,12 @@ Use when asked to triage comments for a freeze.
 3. Write `.forge/triage/<tag>/proposal.json`: `{ "items": [{ "commentId", "disposition",
    "taskId"?, "taskTitle"?, "ddrId"? }] }`.
 4. Run `forge comments triage apply <tag>`. It fails before writing anything if a
-   referenced `taskId`/`ddrId` doesn't exist — fix the proposal and rerun.
-5. Report the counts back (feedback items, new/linked tasks, anything skipped).
+   referenced `taskId`/`ddrId` doesn't exist — fix the proposal and rerun. It also
+   refuses, before writing, when a staged comment changed on the review since it was
+   staged: a stakeholder can edit or delete a comment until it is applied (DDR-165). Stage
+   again and disposition the fresh batch.
+5. Report the counts back (feedback items, new/linked tasks, anything skipped, and which
+   items' comments were withdrawn by their authors).
 
 ## Reviewing a built prototype against the record (forge-review)
 
@@ -185,15 +197,22 @@ Use when asked to freeze, cut a release, or tag a version.
    resolved feedback entries, and newly-accepted DDRs since then. Draft a short
    "what shipped and why" message for a stakeholder — not a raw task-title dump.
 3. Pick a short sequential tag name (`alpha`, `beta`, `v0.3`) if the user hasn't given one.
-4. Make sure the working tree is clean — `forge freeze` refuses otherwise. Commit any
+4. Write the changelog entries **before** freezing (DDR-176): `forge changelog draft` stages
+   candidates in `.forge/changelog/<batch>.json`, all `keep: false`. With the user, keep only
+   what a stakeholder would notice, reword each kept title and body for that reader, read any
+   `requested_by` and `links` back before keeping them (the file crosses to every PIN holder),
+   and add any `coming` entry by hand. Then `forge changelog apply <batch>` and commit. The tag
+   is cut before the freeze commit and the record crosses from the tag, so entries applied
+   after the freeze reach stakeholders one version late. Keeping nothing is a valid answer.
+5. Make sure the working tree is clean — `forge freeze` refuses otherwise. Commit any
    pending record changes first.
-5. Run `forge freeze <tag> --message "<the message from step 2>"`. Freeze produces the
+6. Run `forge freeze <tag> --message "<the message from step 2>"`. Freeze produces the
    artifact; it does not host it. The build is static, so any host can serve it. If the user
    has a Forge Cloud account (closed beta, invited accounts only; `forge whoami` says), put it
    in front of a stakeholder with `forge publish <tag>`, which sends the build and, beside it, the record concepts whose
    `audience` is stakeholders as they stood at the tag. Nothing owner-only leaves the repo;
    the command prints how many concepts crossed and how many stayed home.
-6. Report back the preview/Storybook URLs and handoff pack location verbatim from the
+7. Report back the preview/Storybook URLs and handoff pack location verbatim from the
    command's output. **A freeze has no PIN** — the review gate belongs to hosting, so
    `forge publish` mints it and prints it once (DDR-115). If you published, copy that PIN
    verbatim too, and say that it is not stored in the repo: it is looked up and changed at

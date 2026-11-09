@@ -18,6 +18,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { nextId, scanBundle, withFrontmatter } from "@forgedesign/format";
+import { writeNewFile } from "./atomic-write.js";
 import { writeBundleIndex } from "./bundle-index.js";
 import { todayIsoDate } from "./freezes.js";
 import { requireCurrentRecord } from "./record-version.js";
@@ -177,7 +178,7 @@ export async function applyReview(root: string): Promise<ApplyReviewResult> {
     const id = nextId(allocated, "FEEDBACK");
     allocated.push(id);
     const relPath = path.join(feedbackDir, `${id}.md`);
-    await fs.writeFile(
+    await writeNewFile(
       path.join(root, relPath),
       withFrontmatter(
         {
@@ -196,7 +197,6 @@ export async function applyReview(root: string): Promise<ApplyReviewResult> {
         },
         `> ${oneLine(item.finding)}\n`,
       ),
-      "utf8",
     );
     ids.push(id);
     paths.push(relPath);

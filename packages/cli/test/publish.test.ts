@@ -402,7 +402,10 @@ describe("against Cloud's staged publish (DDR-153, DDR-154)", () => {
   const sha = (data: Buffer | string) => createHash("sha256").update(data).digest("hex");
 
   /** Cloud as the CLI meets it: me says staged, open presigns a URL per file, commit answers. */
-  function cloud(upload: (call: Call, attempt: number) => Answer = () => ({ code: 200 })) {
+  function cloud(
+    upload: (call: Call, attempt: number) => Answer = () => ({ code: 200 }),
+    options: { takesCaptures?: boolean } = {},
+  ) {
     const attempts = new Map<string, number>();
     route = (call) => {
       if (call.path === "/api/cli/me")
@@ -411,6 +414,7 @@ describe("against Cloud's staged publish (DDR-153, DDR-154)", () => {
         const opened = JSON.parse(call.body.toString()) as {
           files: { path: string; contentType: string }[];
           record: { path: string; contentType: string }[];
+          captures?: { path: string; contentType: string }[];
         };
         const presign = (kind: string) => (f: { path: string; contentType: string }) => ({
           kind,
@@ -420,7 +424,14 @@ describe("against Cloud's staged publish (DDR-153, DDR-154)", () => {
         });
         return json({
           uploadId: "u1",
-          uploads: [...opened.files.map(presign("build")), ...opened.record.map(presign("record"))],
+          uploads: [
+            ...opened.files.map(presign("build")),
+            ...opened.record.map(presign("record")),
+            // A Cloud from before DDR-177 ignores the list and presigns nothing for it.
+            ...(options.takesCaptures === false
+              ? []
+              : (opened.captures ?? []).map(presign("capture"))),
+          ],
         });
       }
       if (call.path.startsWith("/upload/")) {
@@ -499,6 +510,70 @@ describe("against Cloud's staged publish (DDR-153, DDR-154)", () => {
     ).toEqual([{ uploadId: "u1" }]);
     const order = calls.map((c) => c.path);
     expect(order.indexOf("/api/cli/publish/commit")).toBe(order.length - 1);
+  });
+
+  it("declares route captures as their own list and uploads them beside the build (DDR-177)", async () => {
+    cloud();
+    await write("dist/index.html", "<h1>hi</h1>");
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+    const outcome = await publishBuild({
+      buildDir: path.join(root, "dist"),
+      projectId: "p",
+      repoName: "r",
+      tag: "v1",
+      captures: [
+        { path: "index.jpg", content: jpeg.toString("base64"), contentType: "image/jpeg" },
+      ],
+    });
+    expect(outcome.ok).toBe(true);
+
+    const [opened] = sent("POST", "/api/cli/publish").map((c) => JSON.parse(c.body.toString()));
+    expect(opened.captures).toEqual([
+      { path: "index.jpg", size: 4, sha256: sha(jpeg), contentType: "image/jpeg" },
+    ]);
+    const puts = sent("PUT", "/upload/capture/");
+    expect(puts.map((c) => [c.path, c.type, c.body.equals(jpeg)])).toEqual([
+      ["/upload/capture/index.jpg", "image/jpeg", true],
+    ]);
+  });
+
+  it("commits even when a capture will not upload, since a picture is never why a build is not hosted", async () => {
+    cloud((call) => (call.path.startsWith("/upload/capture/") ? { code: 403 } : { code: 200 }));
+    await write("dist/index.html", "<h1>hi</h1>");
+    const outcome = await publishBuild({
+      buildDir: path.join(root, "dist"),
+      projectId: "p",
+      repoName: "r",
+      tag: "v1",
+      captures: [{ path: "index.jpg", content: "AAAA", contentType: "image/jpeg" }],
+    });
+    expect(outcome).toEqual({ ok: true, result: RESULT });
+    expect(sent("POST", "/api/cli/publish/commit")).toHaveLength(1);
+  });
+
+  it("publishes as before against a Cloud that takes no captures, and sends none without any", async () => {
+    cloud(undefined, { takesCaptures: false });
+    await write("dist/index.html", "<h1>hi</h1>");
+    const outcome = await publishBuild({
+      buildDir: path.join(root, "dist"),
+      projectId: "p",
+      repoName: "r",
+      tag: "v1",
+      captures: [{ path: "index.jpg", content: "AAAA", contentType: "image/jpeg" }],
+    });
+    expect(outcome).toEqual({ ok: true, result: RESULT });
+    expect(sent("PUT", "/upload/capture/")).toEqual([]);
+
+    calls.length = 0;
+    cloud();
+    await publishBuild({
+      buildDir: path.join(root, "dist"),
+      projectId: "p",
+      repoName: "r",
+      tag: "v1",
+    });
+    const [opened] = sent("POST", "/api/cli/publish").map((c) => JSON.parse(c.body.toString()));
+    expect(opened).not.toHaveProperty("captures");
   });
 
   it("publishes a build the single body could not carry", async () => {

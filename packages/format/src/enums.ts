@@ -46,6 +46,19 @@ export function isQuestionStatus(value: string): value is QuestionStatus {
 }
 
 /**
+ * Where a change entry stands (DDR-176): `coming` is planned and not started,
+ * `exploring` is started and not ready, `done` shipped. One entry walks all
+ * three, so the roadmap item a stakeholder saw as Coming is the changelog line
+ * they later read as Done. The version it shipped in is never a value here —
+ * it is derived from the tags, the way the feature log derives "closed since".
+ */
+export const CHANGE_STATUSES = ["coming", "exploring", "done"] as const;
+export type ChangeStatus = (typeof CHANGE_STATUSES)[number];
+export function isChangeStatus(value: string): value is ChangeStatus {
+  return (CHANGE_STATUSES as readonly string[]).includes(value);
+}
+
+/**
  * How far a decision reaches (spec §5, TASK-457): `project` is about this
  * product, its users, brand or constraints; `general` would hold on a project
  * with a different client. Optional on the file — absent means `project`.

@@ -3,7 +3,7 @@ import http from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initProject } from "../src/commands/init.js";
+import { initProject } from "../src/init.js";
 import { resolveTrail } from "../src/resolution-trail.js";
 
 const SNAPSHOT_ID = "3b241101-e2bb-4255-8caf-4136c566a962";
@@ -354,15 +354,31 @@ describe("the resolution trail (T-294)", () => {
     });
   });
 
-  it("does not stamp the record when the service refuses the push", async () => {
+  it("stamps the record when the service refuses the push, and tells it on the next run (DDR-159)", async () => {
+    // The stamp is the record's fact — the task shipped in v3 — and is written
+    // before anyone is told, which is what lets `forge freeze` commit it before
+    // it pushes. The push catching up later is what re-pushing settled feedback
+    // is for.
     const root = await makeRecord();
     resolveStatus = 500;
 
     const result = await resolveTrail({ tag: "v3", cwd: root });
 
-    expect(result.stamped).toEqual([]);
+    expect(result.stamped).toEqual(["FEEDBACK-001"]);
+    expect(result.synced).toBe(0);
+    expect(result.unsynced).toBe(1);
     expect(result.warnings.join(" ")).toContain("resolution sync failed");
-    expect(await readFeedback(root, "FEEDBACK-001")).not.toContain("addressed_in");
+    expect(result.warnings.join(" ")).toContain("forge comments resolve v3");
+    expect(await readFeedback(root, "FEEDBACK-001")).toContain("addressed_in: v3");
+
+    resolveStatus = 200;
+    await resolveTrail({ tag: "v4", cwd: root });
+    expect(resolveCalls[0]?.resolutions).toContainEqual({
+      commentId: COMMENT_HEAVY,
+      status: "addressed",
+      resolvedInTag: "v3",
+      resolvedInUrl: "https://demo-v3.test",
+    });
   });
 
   it("warns instead of guessing when the freeze has no registered snapshot", async () => {

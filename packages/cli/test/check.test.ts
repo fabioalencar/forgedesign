@@ -5,7 +5,7 @@ import path from "node:path";
 import { parseConcept } from "@forgedesign/format";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checksSatisfied, readCheckConfigs, runCheck } from "../src/check.js";
-import { runFreeze } from "../src/commands/freeze.js";
+import { runFreeze } from "../src/freeze-ceremony.js";
 import { makeDesignRepo } from "./helpers.js";
 
 let sandbox: string;
